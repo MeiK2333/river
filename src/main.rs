@@ -4,7 +4,16 @@ use libc;
 use libc::{time_t, suseconds_t, c_long};
 
 fn main() {
-    let cmd = Command::new("python")
+    run();
+    cgroup();
+}
+
+fn cgroup() {
+    println!("cgroup");
+}
+
+fn run() {
+    let cmd = Command::new("echo")
         .arg("-c")
         .arg("s = 'Hello World!' * 100000000")
         .stdout(Stdio::piped())
