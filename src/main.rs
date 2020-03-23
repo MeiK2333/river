@@ -1,15 +1,18 @@
+extern crate libc;
+
+mod cgroup;
+
 use std::process::{Command, Stdio};
+use std::process;
 use std::io::Read;
-use libc;
 use libc::{time_t, suseconds_t, c_long};
 
 fn main() {
     run();
-    cgroup();
-}
-
-fn cgroup() {
-    println!("cgroup");
+    match cgroup::Cgroup::new(process::id()) {
+        Ok(_) => println!("Hello World!"),
+        Err(e) => println!("{:?}", e),
+    }
 }
 
 fn run() {
