@@ -1,0 +1,18 @@
+time_limit: 1000  # ms
+memory_limit: 65535  # kib
+test_cases:
+  - in: 1.in
+    ans: 1.ans
+  - in: 2.in
+    ans: 2.ans
+  - in: 3.in
+    ans: 3.ans
+    time_limit: 300
+    real_time_limit: 600
+    memory_limit: 32767
+judge_type: standard  # standard / special
+# special_judge:
+#   file: special.cpp
+#   language: cpp
+extra_files:
+  - hello.txt

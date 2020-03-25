@@ -11,12 +11,28 @@ pub enum Error {
 
 pub type Result<T> = result::Result<T, Error>;
 
-pub struct RunArgs {
-    pub exec_file: String,
-    pub exec_args: Vec<String>,
+pub struct TestCase {
+    pub input_file: String,
+    pub answer_file: String,
     pub cpu_time_limit: u32,
     pub real_time_limit: u32,
     pub memory_limit: u32,
+    pub result: TestCaseResult,
+}
+
+#[derive(Debug)]
+pub enum TestCaseResult {
+    Accepted,
+    CompileError(String),
+    WrongAnswer,
+    RuntimeError(String),
+    SystemError(String),
+}
+
+pub struct RunConfigs {
+    pub exec_file: String,
+    pub exec_args: Vec<String>,
+    pub test_cases: Vec<TestCase>,
 }
 
 pub struct ExecArgs {
@@ -25,13 +41,13 @@ pub struct ExecArgs {
     pub envp: *const *const libc::c_char,
 }
 
-impl RunArgs {
+impl RunConfigs {
     /**
      * 为 exec 函数生成参数
      * 涉及到 Rust 到 C 的内存转换，此过程是内存不安全的
      * 请务必手动清理内存，或者仅在马上要执行 exec 的位置执行此函数，以便由操作系统自动回收内存
      */
-    pub fn exec_args(&self) -> Result<ExecArgs> {
+    pub unsafe fn exec_args(&self) -> Result<ExecArgs> {
         let exec_file = match CString::new(self.exec_file.clone()) {
             Ok(value) => value,
             Err(err) => return Err(Error::StringToCStringError(err)),
@@ -72,16 +88,14 @@ mod tests {
 
     #[test]
     fn test_base() {
-        let run_args = RunArgs {
+        let run_args = RunConfigs {
             exec_file: "/bin/echo".to_string(),
             exec_args: vec![
                 "/bin/echo".to_string(),
                 "Hello".to_string(),
                 "World".to_string(),
             ],
-            cpu_time_limit: 1000,
-            real_time_limit: 1000,
-            memory_limit: 65535,
+            test_cases: vec![],
         };
         unsafe {
             let pid = libc::fork();
