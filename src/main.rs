@@ -1,10 +1,11 @@
 extern crate libc;
 
-use std::collections::BTreeMap;
 use handlebars::Handlebars;
+use std::collections::BTreeMap;
+use std::env;
 
-mod runner;
 mod config;
+mod runner;
 
 fn main() {
     let mut handlebars = Handlebars::new();
@@ -15,11 +16,22 @@ fn main() {
     data.insert("world".to_string(), "世界!".to_string());
     println!("{}", handlebars.render("t1", &data).unwrap());
 
-    let _config = match config::Config::default() {
-        Ok(value) => value,
-        Err(err) => {
-            println!("{:?}", err);
-            return
+    let args: Vec<String> = env::args().collect();
+    let _config = if args.len() > 1 {
+        match config::Config::load_from_file(&args[1]) {
+            Ok(value) => value,
+            Err(err) => {
+                println!("{:?}", err);
+                return
+            }
+        }
+    } else {
+        match config::Config::default() {
+            Ok(value) => value,
+            Err(err) => {
+                println!("{:?}", err);
+                return
+            }
         }
     };
 

@@ -1,10 +1,12 @@
 use std::result;
+use std::fs;
 use yaml_rust::{ScanError, Yaml, YamlLoader};
 
 #[derive(Debug)]
 pub enum Error {
     YamlScanError(ScanError),
     YamlParseError(String),
+    ReadFileError,
 }
 
 pub type Result<T> = result::Result<T, Error>;
@@ -85,6 +87,14 @@ impl Config {
         }
 
         Ok(Config { languages })
+    }
+    pub fn load_from_file(filename: &str) -> Result<Config> {
+        let contents = match fs::read_to_string(filename) {
+            Ok(value) => value,
+            Err(_) => return Err(Error::ReadFileError),
+        };
+        let config = Config::load_yaml(&contents)?;
+        Ok(config)
     }
     pub fn default() -> Result<Config> {
         let config_yaml = "
