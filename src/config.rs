@@ -97,17 +97,7 @@ impl Config {
         Ok(config)
     }
     pub fn default() -> Result<Config> {
-        let config_yaml = "
-languages:
-  - language: c
-    version: 7.5.0
-    compile_command: /usr/bin/gcc {{filename}} -o a.out
-    run_command: ./a.out
-  - language: python
-    version: 3.6.9
-    compile_command: /usr/bin/python3 -m compileall {{filename}}
-    run_command: /use/bin/python3 {{filename}}
-    ";
+        let config_yaml = include_str!("default.yml");
         let config = Config::load_yaml(config_yaml)?;
         Ok(config)
     }
