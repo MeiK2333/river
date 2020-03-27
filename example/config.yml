@@ -16,3 +16,12 @@ judge_type: standard  # standard / special
 #   language: cpp
 extra_files:
   - hello.txt
+# code:
+#   file: main.c
+#   language: c
+code:
+  file: main.cpp
+  language: cpp
+# code:
+#   file: main.py
+#   language: python
