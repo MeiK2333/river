@@ -1,8 +1,28 @@
 extern crate libc;
 
+use std::collections::BTreeMap;
+use handlebars::Handlebars;
+
 mod runner;
+mod config;
 
 fn main() {
+    let mut handlebars = Handlebars::new();
+    let source = "hello {{world}}";
+    let _ = handlebars.register_template_string("t1", source);
+    let mut data = BTreeMap::new();
+    data.insert("hello".to_string(), "你好".to_string());
+    data.insert("world".to_string(), "世界!".to_string());
+    println!("{}", handlebars.render("t1", &data).unwrap());
+
+    let _config = match config::Config::default() {
+        Ok(value) => value,
+        Err(err) => {
+            println!("{:?}", err);
+            return
+        }
+    };
+
     process();
 }
 
@@ -11,7 +31,7 @@ fn process() {
     unsafe {
         pid = libc::fork();
     }
-    let mut run_configs = runner::RunConfigs {
+    let mut run_configs = runner::JudgeConfigs {
         exec_file: "/usr/bin/python3".to_string(),
         exec_args: vec![
             "/usr/bin/python3".to_string(),

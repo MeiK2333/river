@@ -29,7 +29,7 @@ pub enum TestCaseResult {
     SystemError(String),
 }
 
-pub struct RunConfigs {
+pub struct JudgeConfigs {
     pub exec_file: String,
     pub exec_args: Vec<String>,
     pub test_cases: Vec<TestCase>,
@@ -41,7 +41,7 @@ pub struct ExecArgs {
     pub envp: *const *const libc::c_char,
 }
 
-impl RunConfigs {
+impl JudgeConfigs {
     /**
      * 为 exec 函数生成参数
      * 涉及到 Rust 到 C 的内存转换，此过程是内存不安全的
@@ -74,11 +74,12 @@ impl RunConfigs {
         mem::forget(env);
         mem::forget(exec_file);
         mem::forget(exec_args);
-        return Ok(ExecArgs {
+
+        Ok(ExecArgs {
             pathname: exec_file_ptr,
             argv: exec_args_ptr,
             envp: env_ptr,
-        });
+        })
     }
 }
 
@@ -88,7 +89,7 @@ mod tests {
 
     #[test]
     fn test_base() {
-        let run_args = RunConfigs {
+        let run_args = JudgeConfigs {
             exec_file: "/bin/echo".to_string(),
             exec_args: vec![
                 "/bin/echo".to_string(),

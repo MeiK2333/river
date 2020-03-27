@@ -8,3 +8,5 @@ edition = "2018"
 
 [dependencies]
 libc = "0.2"
+handlebars = "3.0.1"
+yaml-rust = "0.4"
