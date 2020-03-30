@@ -18,20 +18,15 @@ fn main() {
 
     let args: Vec<String> = env::args().collect();
     let _config = if args.len() > 1 {
-        match config::Config::load_from_file(&args[1]) {
-            Ok(value) => value,
-            Err(err) => {
-                println!("{:?}", err);
-                return
-            }
-        }
+        config::Config::load_from_file(&args[1])
     } else {
-        match config::Config::default() {
-            Ok(value) => value,
-            Err(err) => {
-                println!("{:?}", err);
-                return
-            }
+        config::Config::default()
+    };
+    let _config = match _config {
+        Ok(value) => value,
+        Err(err) => {
+            eprintln!("{:?}", err);
+            return
         }
     };
 
