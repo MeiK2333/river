@@ -1,5 +1,5 @@
-use std::result;
 use std::fs;
+use std::result;
 use yaml_rust::{ScanError, Yaml, YamlLoader};
 
 #[derive(Debug)]
@@ -7,10 +7,12 @@ pub enum Error {
     YamlScanError(ScanError),
     YamlParseError(String),
     ReadFileError,
+    LanguageNotFound(String),
 }
 
 pub type Result<T> = result::Result<T, Error>;
 
+#[derive(Clone)]
 pub struct LanguageConfig {
     pub language: String,
     pub version: String,
@@ -23,6 +25,14 @@ pub struct Config {
 }
 
 impl Config {
+    pub fn language_config_from_name(&self, name: &str) -> Result<LanguageConfig> {
+        for language in &self.languages {
+            if language.language == name {
+                return Ok(language.clone())
+            }
+        }
+        Err(Error::LanguageNotFound(name.to_string()))
+    }
     fn load_yaml(yaml: &str) -> Result<Config> {
         let docs = match YamlLoader::load_from_str(yaml) {
             Ok(value) => value,

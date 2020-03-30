@@ -17,12 +17,20 @@ fn main() {
     println!("{}", handlebars.render("t1", &data).unwrap());
 
     let args: Vec<String> = env::args().collect();
-    let _config = if args.len() > 1 {
+    let config = if args.len() > 1 {
         config::Config::load_from_file(&args[1])
     } else {
         config::Config::default()
     };
-    let _config = match _config {
+    let config = match config {
+        Ok(value) => value,
+        Err(err) => {
+            eprintln!("{:?}", err);
+            return
+        }
+    };
+
+    let _ = match runner::JudgeConfigs::load(&config, "example") {
         Ok(value) => value,
         Err(err) => {
             eprintln!("{:?}", err);
@@ -60,7 +68,7 @@ fn process() {
             cpu_time_limit: 1000,
             real_time_limit: 1000,
             memory_limit: 65535,
-            result: runner::TestCaseResult::Accepted,
+            result: Some(runner::TestCaseResult::Accepted),
         });
         run_configs.test_cases.push(runner::TestCase {
             answer_file: "2.ans".to_string(),
@@ -68,7 +76,7 @@ fn process() {
             cpu_time_limit: 1000,
             real_time_limit: 1000,
             memory_limit: 65535,
-            result: runner::TestCaseResult::CompileError("compile error".to_string()),
+            result: Some(runner::TestCaseResult::CompileError("compile error".to_string())),
         });
         run_configs.test_cases.push(runner::TestCase {
             answer_file: "3.ans".to_string(),
@@ -76,7 +84,7 @@ fn process() {
             cpu_time_limit: 1000,
             real_time_limit: 1000,
             memory_limit: 65535,
-            result: runner::TestCaseResult::WrongAnswer,
+            result: Some(runner::TestCaseResult::WrongAnswer),
         });
         run_configs.test_cases.push(runner::TestCase {
             answer_file: "4.ans".to_string(),
@@ -84,7 +92,7 @@ fn process() {
             cpu_time_limit: 1000,
             real_time_limit: 1000,
             memory_limit: 65535,
-            result: runner::TestCaseResult::RuntimeError("runtime error".to_string()),
+            result: Some(runner::TestCaseResult::RuntimeError("runtime error".to_string())),
         });
         run_configs.test_cases.push(runner::TestCase {
             answer_file: "5.ans".to_string(),
@@ -92,7 +100,7 @@ fn process() {
             cpu_time_limit: 1000,
             real_time_limit: 1000,
             memory_limit: 65535,
-            result: runner::TestCaseResult::SystemError("system error".to_string()),
+            result: Some(runner::TestCaseResult::SystemError("system error".to_string())),
         });
         println!("{:?}", run_configs.test_cases[0].result);
     } else {
