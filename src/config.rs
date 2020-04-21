@@ -4,8 +4,7 @@ use yaml_rust::{Yaml, YamlLoader};
 
 use super::error::{Error, Result};
 
-#[derive(Clone)]
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct LanguageConfig {
     pub language: String,
     pub version: String,
@@ -21,7 +20,7 @@ impl Config {
     pub fn language_config_from_name(&self, name: &str) -> Result<LanguageConfig> {
         for language in &self.languages {
             if language.language == name {
-                return Ok(language.clone())
+                return Ok(language.clone());
             }
         }
         Err(Error::LanguageNotFound(name.to_string()))
@@ -94,7 +93,12 @@ impl Config {
     pub fn load_from_file(filename: &str) -> Result<Config> {
         let contents = match fs::read_to_string(filename) {
             Ok(value) => value,
-            Err(_) => return Err(Error::ReadFileError(filename.to_string(), io::Error::last_os_error().raw_os_error())),
+            Err(_) => {
+                return Err(Error::ReadFileError(
+                    filename.to_string(),
+                    io::Error::last_os_error().raw_os_error(),
+                ))
+            }
         };
         let config = Config::load_yaml(&contents)?;
         Ok(config)

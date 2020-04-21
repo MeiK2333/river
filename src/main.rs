@@ -1,7 +1,7 @@
 use std::env;
 
-mod error;
 mod config;
+mod error;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -13,8 +13,8 @@ fn main() {
     let config = match config {
         Ok(value) => value,
         Err(err) => {
-            eprintln!("{:?}", err);
-            return
+            eprintln!("{}", err);
+            return;
         }
     };
     let language = config.language_config_from_name("c");
