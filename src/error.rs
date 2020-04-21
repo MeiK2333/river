@@ -10,6 +10,9 @@ pub enum Error {
     YamlParseError(String),
     LanguageNotFound(String),
     ReadFileError(String, Option<i32>),
+
+    UnknownJudgeType(String),
+    PathJoinError,
 }
 
 pub type Result<T> = result::Result<T, Error>;
@@ -33,7 +36,9 @@ impl fmt::Display for Error {
                     _ => "Unknown Error!",
                 };
                 write!(f, "ReadFileError: `{}` {}", filename, reason)
-            }
+            },
+            Error::UnknownJudgeType(ref judge_type) => write!(f, "UnknownJudgeType: {}", judge_type),
+            Error::PathJoinError => write!(f, "PathJoinError"),
         }
     }
 }

@@ -2,6 +2,7 @@ use std::env;
 
 mod config;
 mod error;
+mod judger;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -17,6 +18,15 @@ fn main() {
             return;
         }
     };
-    let language = config.language_config_from_name("c");
-    println!("{:?}", language.unwrap());
+    let language = config.language_config_from_name("python");
+    println!("{}", language.unwrap());
+
+    let judge_config = match judger::JudgeConfig::load(&config, "example") {
+        Ok(value) => value,
+        Err(err) => {
+            eprintln!("{}", err);
+            return;
+        }
+    };
+    println!("{}", judge_config.code.language);
 }

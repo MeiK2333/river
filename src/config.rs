@@ -1,3 +1,4 @@
+use std::fmt;
 use std::fs;
 use std::io;
 use yaml_rust::{Yaml, YamlLoader};
@@ -10,6 +11,12 @@ pub struct LanguageConfig {
     pub version: String,
     pub compile_command: String,
     pub run_command: String,
+}
+
+impl fmt::Display for LanguageConfig {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{} {}", self.language, self.version)
+    }
 }
 
 pub struct Config {
