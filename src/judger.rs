@@ -1,5 +1,7 @@
 use super::config;
 use super::error::{Error, Result};
+use super::result::TestCaseResult;
+use std::fmt;
 use std::fs;
 use std::io;
 use std::path::Path;
@@ -14,13 +16,23 @@ pub struct TestCase {
     pub result: Option<TestCaseResult>,
 }
 
-#[derive(Debug)]
-pub enum TestCaseResult {
-    Accepted,
-    CompileError(String),
-    WrongAnswer,
-    RuntimeError(String),
-    SystemError(String),
+impl fmt::Display for TestCase {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let result = match &self.result {
+            Some(res) => res.to_string(),
+            None => "None".to_string()
+        };
+        write!(
+            f,
+            "input_file: {}
+answer_file: {}
+time_limit: {}
+memory_limit: {}
+result: {:?}
+",
+            self.input_file, self.answer_file, self.cpu_time_limit, self.memory_limit, result
+        )
+    }
 }
 
 pub enum JudgeType {
