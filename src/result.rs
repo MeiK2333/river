@@ -6,7 +6,7 @@ pub struct ResourceUsed {
     pub memory_used: u32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TestCaseResult {
     Accepted(ResourceUsed),
     CompileError(ResourceUsed, String),

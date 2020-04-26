@@ -23,7 +23,7 @@ fn main() {
     let language = config.language_config_from_name("python");
     println!("{}", language.unwrap());
 
-    let mut judge_config = match judger::JudgeConfig::load(&config, "example") {
+    let judge_config = match judger::JudgeConfig::load(&config, "example") {
         Ok(value) => value,
         Err(err) => {
             eprintln!("{}", err);
@@ -32,5 +32,5 @@ fn main() {
     };
     println!("{}", judge_config.code.language);
 
-    process::run(&mut judge_config);
+    process::run(&judge_config);
 }

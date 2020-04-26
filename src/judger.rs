@@ -1,6 +1,5 @@
 use super::config;
 use super::error::{Error, Result};
-use super::result::TestCaseResult;
 use std::fmt;
 use std::fs;
 use std::io;
@@ -8,29 +7,25 @@ use std::path::Path;
 use yaml_rust::{Yaml, YamlLoader};
 
 pub struct TestCase {
+    pub index: u32,
     pub input_file: String,
     pub answer_file: String,
     pub cpu_time_limit: u32,
     pub real_time_limit: u32,
     pub memory_limit: u32,
-    pub result: Option<TestCaseResult>,
 }
 
 impl fmt::Display for TestCase {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let result = match &self.result {
-            Some(res) => res.to_string(),
-            None => "None".to_string()
-        };
         write!(
             f,
-            "input_file: {}
+            "index: {}
+input_file: {}
 answer_file: {}
 time_limit: {}
 memory_limit: {}
-result: {:?}
 ",
-            self.input_file, self.answer_file, self.cpu_time_limit, self.memory_limit, result
+            self.index, self.input_file, self.answer_file, self.cpu_time_limit, self.memory_limit
         )
     }
 }
@@ -92,6 +87,8 @@ impl JudgeConfig {
             }
         };
         let mut tests: Vec<TestCase> = vec![];
+        // Yaml 解析库没有实现 enumerate 方法，因此此处使用 index 进行计数
+        let mut index = 1;
         for case in test_cases {
             let cpu_time_limit = match &case["time_limit"] {
                 Yaml::Integer(value) => value.clone() as u32,
@@ -147,13 +144,14 @@ impl JudgeConfig {
                 }
             };
             tests.push(TestCase {
+                index,
                 cpu_time_limit,
                 real_time_limit,
                 memory_limit,
-                result: None,
                 input_file,
                 answer_file,
             });
+            index += 1;
         }
         let judge_type = match &doc["judge_type"] {
             Yaml::String(value) => {

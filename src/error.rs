@@ -1,5 +1,7 @@
+use handlebars::RenderError;
 use libc::strerror;
 use std::ffi::CStr;
+use std::ffi::NulError;
 use std::fmt;
 use std::result;
 use yaml_rust::ScanError;
@@ -13,6 +15,10 @@ pub enum Error {
 
     UnknownJudgeType(String),
     PathJoinError,
+
+    StringToCStringError(NulError),
+    TemplateRenderError(RenderError),
+    LanguageConfigError(String),
 }
 
 pub type Result<T> = result::Result<T, Error>;
@@ -36,9 +42,12 @@ impl fmt::Display for Error {
                     _ => "Unknown Error!",
                 };
                 write!(f, "ReadFileError: `{}` {}", filename, reason)
-            },
-            Error::UnknownJudgeType(ref judge_type) => write!(f, "UnknownJudgeType: {}", judge_type),
+            }
+            Error::UnknownJudgeType(ref judge_type) => {
+                write!(f, "UnknownJudgeType: {}", judge_type)
+            }
             Error::PathJoinError => write!(f, "PathJoinError"),
+            _ => write!(f, "{:?}", self),
         }
     }
 }
