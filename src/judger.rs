@@ -1,48 +1,33 @@
-use std::ffi::CString;
-use std::ffi::NulError;
-use std::fs;
-use std::mem;
-use std::path::Path;
-use std::ptr;
-use std::result;
-use yaml_rust::{ScanError, Yaml, YamlLoader};
-
 use super::config;
-
-#[derive(Debug)]
-pub enum Error {
-    StringToCStringError(NulError),
-    ReadFileError,
-    PathJoinError,
-    YamlScanError(ScanError),
-    YamlParseError(String),
-    UnknownJudgeType(String),
-    LanguageNotFound(String),
-}
-
-pub type Result<T> = result::Result<T, Error>;
+use super::error::{Error, Result};
+use std::fmt;
+use std::fs;
+use std::io;
+use std::path::Path;
+use yaml_rust::{Yaml, YamlLoader};
 
 pub struct TestCase {
+    pub index: u32,
     pub input_file: String,
     pub answer_file: String,
     pub cpu_time_limit: u32,
     pub real_time_limit: u32,
     pub memory_limit: u32,
-    pub result: Option<TestCaseResult>,
 }
 
-#[derive(Debug)]
-pub enum TestCaseResult {
-    Accepted,
-    CompileError(String),
-    WrongAnswer,
-    RuntimeError(String),
-    SystemError(String),
-}
-
-pub struct JudgeCode {
-    pub file: String,
-    pub language: config::LanguageConfig,
+impl fmt::Display for TestCase {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "index: {}
+input_file: {}
+answer_file: {}
+time_limit: {}
+memory_limit: {}
+",
+            self.index, self.input_file, self.answer_file, self.cpu_time_limit, self.memory_limit
+        )
+    }
 }
 
 pub enum JudgeType {
@@ -50,30 +35,20 @@ pub enum JudgeType {
     Special,
 }
 
-pub struct TestConfig {
-    pub default_time_limit: u32,
-    pub default_real_time_limit: u32,
-    pub default_memory_limit: u32,
+pub struct Code {
+    pub file: String,
+    pub language: config::LanguageConfig,
+}
+
+pub struct JudgeConfig {
     pub tests: Vec<TestCase>,
     pub judge_type: JudgeType,
     pub extra_files: Vec<String>,
-    pub code: JudgeCode,
+    pub code: Code,
 }
 
-pub struct JudgeConfigs {
-    pub exec_file: String,
-    pub exec_args: Vec<String>,
-    pub test_cases: Vec<TestCase>,
-}
-
-pub struct ExecArgs {
-    pub pathname: *const libc::c_char,
-    pub argv: *const *const libc::c_char,
-    pub envp: *const *const libc::c_char,
-}
-
-impl JudgeConfigs {
-    fn load_yaml(global_config: &config::Config, yaml: &str) -> Result<TestConfig> {
+impl JudgeConfig {
+    fn load_yaml(global_config: &config::Config, yaml: &str) -> Result<JudgeConfig> {
         let docs = match YamlLoader::load_from_str(yaml) {
             Ok(value) => value,
             Err(err) => return Err(Error::YamlScanError(err)),
@@ -86,15 +61,6 @@ impl JudgeConfigs {
             _ => {
                 return Err(Error::YamlParseError(
                     "解析错误，time_limit 字段的类型应该为 Integer".to_string(),
-                ))
-            }
-        };
-        let default_real_time_limit = match &doc["real_time_limit"] {
-            Yaml::Integer(value) => value.clone() as u32,
-            Yaml::BadValue => default_time_limit * 2 + 5000,
-            _ => {
-                return Err(Error::YamlParseError(
-                    "解析错误，real_time_limit 字段的类型应该为 Integer".to_string(),
                 ))
             }
         };
@@ -121,6 +87,8 @@ impl JudgeConfigs {
             }
         };
         let mut tests: Vec<TestCase> = vec![];
+        // Yaml 解析库没有实现 enumerate 方法，因此此处使用 index 进行计数
+        let mut index = 1;
         for case in test_cases {
             let cpu_time_limit = match &case["time_limit"] {
                 Yaml::Integer(value) => value.clone() as u32,
@@ -176,13 +144,14 @@ impl JudgeConfigs {
                 }
             };
             tests.push(TestCase {
+                index,
                 cpu_time_limit,
                 real_time_limit,
                 memory_limit,
-                result: None,
                 input_file,
                 answer_file,
             });
+            index += 1;
         }
         let judge_type = match &doc["judge_type"] {
             Yaml::String(value) => {
@@ -269,7 +238,7 @@ impl JudgeConfigs {
                         ))
                     }
                 };
-                JudgeCode { file, language }
+                Code { file, language }
             }
             Yaml::BadValue => {
                 return Err(Error::YamlParseError(
@@ -283,20 +252,14 @@ impl JudgeConfigs {
             }
         };
 
-        Ok(TestConfig {
-            default_time_limit,
-            default_real_time_limit,
-            default_memory_limit,
+        Ok(JudgeConfig {
             tests,
             judge_type,
             extra_files,
             code,
         })
     }
-    /**
-     * 读取评测文件夹
-     */
-    pub fn load(global_config: &config::Config, path: &str) -> Result<JudgeConfigs> {
+    pub fn load(global_config: &config::Config, path: &str) -> Result<JudgeConfig> {
         let dir = Path::new(&path);
 
         let config = dir.join("config.yml");
@@ -306,78 +269,13 @@ impl JudgeConfigs {
         };
         let config = match fs::read_to_string(&config) {
             Ok(value) => value,
-            Err(_) => return Err(Error::ReadFileError),
-        };
-        let _config = JudgeConfigs::load_yaml(global_config, &config)?;
-
-        Ok(JudgeConfigs {
-            exec_file: "".to_string(),
-            exec_args: vec![],
-            test_cases: vec![],
-        })
-    }
-    /**
-     * 为 exec 函数生成参数
-     * 涉及到 Rust 到 C 的内存转换，此过程是内存不安全的
-     * 请务必手动清理内存，或者仅在马上要执行 exec 的位置执行此函数，以便由操作系统自动回收内存
-     */
-    pub unsafe fn exec_args(&self) -> Result<ExecArgs> {
-        let exec_file = match CString::new(self.exec_file.clone()) {
-            Ok(value) => value,
-            Err(err) => return Err(Error::StringToCStringError(err)),
-        };
-        let exec_file_ptr = exec_file.as_ptr();
-        let mut exec_args: Vec<*const libc::c_char> = vec![];
-        for item in self.exec_args.iter() {
-            let cstr = match CString::new(item.clone()) {
-                Ok(value) => value,
-                Err(err) => return Err(Error::StringToCStringError(err)),
-            };
-            let cptr = cstr.as_ptr();
-            // 需要使用 mem::forget 来标记
-            // 否则在此次循环结束后，cstr 就会被回收，后续 exec 函数无法通过指针获取到字符串内容
-            mem::forget(cstr);
-            exec_args.push(cptr);
-        }
-        // argv 与 envp 的参数需要使用 NULL 来标记结束
-        exec_args.push(ptr::null());
-        let exec_args_ptr: *const *const libc::c_char =
-            exec_args.as_ptr() as *const *const libc::c_char;
-        let env: Vec<*const libc::c_char> = vec![ptr::null()];
-        let env_ptr = env.as_ptr() as *const *const libc::c_char;
-        mem::forget(env);
-        mem::forget(exec_file);
-        mem::forget(exec_args);
-
-        Ok(ExecArgs {
-            pathname: exec_file_ptr,
-            argv: exec_args_ptr,
-            envp: env_ptr,
-        })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_base() {
-        let run_args = JudgeConfigs {
-            exec_file: "/bin/echo".to_string(),
-            exec_args: vec![
-                "/bin/echo".to_string(),
-                "Hello".to_string(),
-                "World".to_string(),
-            ],
-            test_cases: vec![],
-        };
-        unsafe {
-            let pid = libc::fork();
-            if pid == 0 {
-                let exec_args = run_args.exec_args().unwrap();
-                libc::execve(exec_args.pathname, exec_args.argv, exec_args.envp);
+            Err(_) => {
+                return Err(Error::ReadFileError(
+                    path.to_string(),
+                    io::Error::last_os_error().raw_os_error(),
+                ))
             }
-        }
+        };
+        JudgeConfig::load_yaml(global_config, &config)
     }
 }

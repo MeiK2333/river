@@ -3,6 +3,14 @@ languages:
     version: 7.5.0
     compile_command: /usr/bin/gcc {{filename}} -o a.out
     run_command: ./a.out
+  - language: cpp
+    version: 7.5.0
+    compile_command: /usr/bin/g++ {{filename}} -o a.out
+    run_command: ./a.out
+  - language: bash
+    version: 4.4.20
+    compile_command: "/bin/echo Hello World!"
+    run_command: /bin/bash {{filename}}
   - language: python
     version: 3.6.9
     compile_command: /usr/bin/python3 -m compileall {{filename}}

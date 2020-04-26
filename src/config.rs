@@ -1,23 +1,22 @@
+use std::fmt;
 use std::fs;
-use std::result;
-use yaml_rust::{ScanError, Yaml, YamlLoader};
+use std::io;
+use yaml_rust::{Yaml, YamlLoader};
 
-#[derive(Debug)]
-pub enum Error {
-    YamlScanError(ScanError),
-    YamlParseError(String),
-    ReadFileError,
-    LanguageNotFound(String),
-}
+use super::error::{Error, Result};
 
-pub type Result<T> = result::Result<T, Error>;
-
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct LanguageConfig {
     pub language: String,
     pub version: String,
     pub compile_command: String,
     pub run_command: String,
+}
+
+impl fmt::Display for LanguageConfig {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{} {}", self.language, self.version)
+    }
 }
 
 pub struct Config {
@@ -28,7 +27,7 @@ impl Config {
     pub fn language_config_from_name(&self, name: &str) -> Result<LanguageConfig> {
         for language in &self.languages {
             if language.language == name {
-                return Ok(language.clone())
+                return Ok(language.clone());
             }
         }
         Err(Error::LanguageNotFound(name.to_string()))
@@ -101,7 +100,12 @@ impl Config {
     pub fn load_from_file(filename: &str) -> Result<Config> {
         let contents = match fs::read_to_string(filename) {
             Ok(value) => value,
-            Err(_) => return Err(Error::ReadFileError),
+            Err(_) => {
+                return Err(Error::ReadFileError(
+                    filename.to_string(),
+                    io::Error::last_os_error().raw_os_error(),
+                ))
+            }
         };
         let config = Config::load_yaml(&contents)?;
         Ok(config)
