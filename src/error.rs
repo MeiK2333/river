@@ -1,8 +1,8 @@
 use handlebars::RenderError;
 use libc::strerror;
-use std::ffi::CStr;
-use std::ffi::NulError;
+use std::ffi::{CStr, NulError, OsString};
 use std::fmt;
+use std::io;
 use std::result;
 use yaml_rust::ScanError;
 
@@ -19,6 +19,11 @@ pub enum Error {
     StringToCStringError(NulError),
     TemplateRenderError(RenderError),
     LanguageConfigError(String),
+    CreateTempDirError(io::Error),
+    CloseTempDirError(io::Error),
+    CopyFileError(io::Error),
+    OsStringToStringError(OsString),
+    ForkError(Option<i32>),
 }
 
 pub type Result<T> = result::Result<T, Error>;
@@ -47,6 +52,17 @@ impl fmt::Display for Error {
                 write!(f, "UnknownJudgeType: {}", judge_type)
             }
             Error::PathJoinError => write!(f, "PathJoinError"),
+            Error::ForkError(errno) => {
+                let reason = match errno {
+                    Some(no) => {
+                        let stre = unsafe { strerror(no) };
+                        let c_str: &CStr = unsafe { CStr::from_ptr(stre) };
+                        c_str.to_str().unwrap()
+                    }
+                    _ => "Unknown Error!",
+                };
+                write!(f, "ForkError: {}", reason)
+            }
             _ => write!(f, "{:?}", self),
         }
     }

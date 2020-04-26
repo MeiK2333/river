@@ -14,4 +14,5 @@ languages:
   - language: python
     version: 3.6.9
     compile_command: /usr/bin/python3 -m compileall {{filename}}
-    run_command: /use/bin/python3 {{filename}}
+    1run_command: /usr/bin/python3 {{filename}}
+    run_command: /bin/ls

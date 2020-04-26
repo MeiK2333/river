@@ -4,9 +4,15 @@ use super::error::{Error, Result};
 use super::judger::{JudgeConfig, TestCase};
 use handlebars::Handlebars;
 use std::collections::BTreeMap;
+use std::env;
 use std::ffi::CString;
+use std::fs;
+use std::io;
 use std::mem;
+use std::path::Path;
 use std::ptr;
+use std::{thread, time};
+use tempfile::tempdir;
 
 pub struct ExecArgs {
     pub pathname: *const libc::c_char,
@@ -55,8 +61,30 @@ impl ExecArgs {
         argv_vec.push(ptr::null());
         let argv: *const *const libc::c_char = argv_vec.as_ptr() as *const *const libc::c_char;
 
-        // env 环境变量传 null，默认不传递任何环境变量，后续有需求可以修改此处
-        let envp_vec: Vec<*const libc::c_char> = vec![ptr::null()];
+        // env 环境变量传递当前进程环境变量
+        let mut envp_vec: Vec<*const libc::c_char> = vec![];
+        for (key, value) in env::vars_os() {
+            let mut key = match key.to_str() {
+                Some(val) => val.to_string(),
+                None => return Err(Error::OsStringToStringError(key)),
+            };
+            let value = match value.to_str() {
+                Some(val) => val.to_string(),
+                None => return Err(Error::OsStringToStringError(value)),
+            };
+            key.push_str("=");
+            key.push_str(&value);
+            let cstr = match CString::new(key) {
+                Ok(value) => value,
+                Err(err) => return Err(Error::StringToCStringError(err)),
+            };
+            let cptr = cstr.as_ptr();
+            // 需要使用 mem::forget 来标记
+            // 否则在此次循环结束后，cstr 就会被回收，后续 exec 函数无法通过指针获取到字符串内容
+            mem::forget(cstr);
+            envp_vec.push(cptr);
+        }
+        envp_vec.push(ptr::null());
         let envp = envp_vec.as_ptr() as *const *const libc::c_char;
 
         mem::forget(pathname_str);
@@ -79,32 +107,71 @@ impl Drop for ExecArgs {
     }
 }
 
-pub fn run(judge_config: &JudgeConfig) {
+pub fn run(judge_config: &JudgeConfig) -> Result<()> {
+    let pwd = match tempdir() {
+        Ok(val) => val,
+        Err(err) => return Err(Error::CreateTempDirError(err)),
+    };
+    let from_dir = Path::new(&judge_config.config_dir);
+    let to_dir = pwd.path();
+
+    let mut copy_files: Vec<String> = vec![];
+    copy_files.push(judge_config.code.file.clone());
+    copy_files.extend_from_slice(&judge_config.extra_files);
     for test_case in &judge_config.tests {
-        run_one(judge_config, test_case);
-        println!("{}", test_case);
+        copy_files.push(test_case.input_file.clone());
     }
+    // copy file
+    for file in &copy_files {
+        let from_file = from_dir.join(file);
+        let to_file = to_dir.join(file);
+        match fs::copy(from_file, to_file) {
+            Ok(_) => {}
+            Err(err) => return Err(Error::CopyFileError(err)),
+        };
+    }
+    for test_case in &judge_config.tests {
+        let _ = run_one(judge_config, test_case, to_dir);
+    }
+    match pwd.close() {
+        Ok(_) => {}
+        Err(err) => return Err(Error::CloseTempDirError(err)),
+    };
+    Ok(())
 }
 
-pub fn run_one(judge_config: &JudgeConfig, test_case: &TestCase) {
+pub fn run_one(judge_config: &JudgeConfig, test_case: &TestCase, workdir: &Path) -> Result<()> {
     println!("running test case: {}", test_case.index);
-    
     let pid;
+
     unsafe {
         pid = libc::fork();
     }
-    
-    if pid == 0 { // 子进程
+    if pid == 0 {
+        // 子进程
         // 此处如果出现 Error，则直接程序崩溃，父进程可以收集异常的信息
+
+        // 修改工作目录
+        env::set_current_dir(workdir).unwrap();
+
         let exec_args = ExecArgs::build(
-            &judge_config.code.language.compile_command.clone(),
+            &judge_config.code.language.run_command.clone(),
             &judge_config,
-        ).unwrap();
+        )
+        .unwrap();
         unsafe {
             libc::execve(exec_args.pathname, exec_args.argv, exec_args.envp);
         }
-    } else if pid > 0 { // 父进程
+        // 理论上，不会走到这里，在上一句 exec 后，程序就已经被替换为待执行程序了
+        // 所以， How dare you!
+        panic!("How dare you!");
+    } else if pid > 0 {
+        // 父进程
         println!("pid: {}", pid);
-    } else { // 异常
+        println!("{:?}", workdir);
+    } else {
+        // 异常
+        return Err(Error::ForkError(io::Error::last_os_error().raw_os_error()));
     }
+    Ok(())
 }

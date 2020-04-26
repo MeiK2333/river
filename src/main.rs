@@ -32,5 +32,11 @@ fn main() {
     };
     println!("{}", judge_config.code.language);
 
-    process::run(&judge_config);
+    match process::run(&judge_config) {
+        Ok(_) => {}
+        Err(err) => {
+            eprintln!("{}", err);
+            return;
+        }
+    };
 }

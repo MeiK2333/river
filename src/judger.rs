@@ -41,6 +41,7 @@ pub struct Code {
 }
 
 pub struct JudgeConfig {
+    pub config_dir: String,
     pub tests: Vec<TestCase>,
     pub judge_type: JudgeType,
     pub extra_files: Vec<String>,
@@ -48,7 +49,7 @@ pub struct JudgeConfig {
 }
 
 impl JudgeConfig {
-    fn load_yaml(global_config: &config::Config, yaml: &str) -> Result<JudgeConfig> {
+    fn load_yaml(global_config: &config::Config, yaml: &str, path: &str) -> Result<JudgeConfig> {
         let docs = match YamlLoader::load_from_str(yaml) {
             Ok(value) => value,
             Err(err) => return Err(Error::YamlScanError(err)),
@@ -253,6 +254,7 @@ impl JudgeConfig {
         };
 
         Ok(JudgeConfig {
+            config_dir: path.into(),
             tests,
             judge_type,
             extra_files,
@@ -276,6 +278,6 @@ impl JudgeConfig {
                 ))
             }
         };
-        JudgeConfig::load_yaml(global_config, &config)
+        JudgeConfig::load_yaml(global_config, &config, &path)
     }
 }
