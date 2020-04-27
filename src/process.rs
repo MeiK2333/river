@@ -3,6 +3,7 @@ extern crate libc;
 use super::error::{Error, Result};
 use super::judger::{JudgeConfig, TestCase};
 use handlebars::Handlebars;
+use libc::{c_long, suseconds_t, time_t};
 use std::collections::BTreeMap;
 use std::env;
 use std::ffi::CString;
@@ -11,7 +12,7 @@ use std::io;
 use std::mem;
 use std::path::Path;
 use std::ptr;
-use std::{thread, time};
+use std::time::SystemTime;
 use tempfile::tempdir;
 
 pub struct ExecArgs {
@@ -21,7 +22,7 @@ pub struct ExecArgs {
 }
 
 impl ExecArgs {
-    fn build<'b>(cmd: &'b String, judge_config: &'b JudgeConfig) -> Result<ExecArgs> {
+    fn build(cmd: &String, judge_config: &JudgeConfig) -> Result<ExecArgs> {
         let mut handlebars = Handlebars::new();
         let _ = handlebars.register_template_string("build", cmd);
         let mut data = BTreeMap::new();
@@ -130,8 +131,9 @@ pub fn run(judge_config: &JudgeConfig) -> Result<()> {
             Err(err) => return Err(Error::CopyFileError(err)),
         };
     }
+    let _ = compile(judge_config, to_dir)?;
     for test_case in &judge_config.tests {
-        let _ = run_one(judge_config, test_case, to_dir);
+        let _ = run_one(judge_config, test_case, to_dir)?;
     }
     match pwd.close() {
         Ok(_) => {}
@@ -140,10 +142,78 @@ pub fn run(judge_config: &JudgeConfig) -> Result<()> {
     Ok(())
 }
 
+pub struct ExitStatus {
+    pub rusage: libc::rusage,
+    pub status: i32,
+    pub time_used: i64,
+    pub real_time_used: u128,
+    pub memory_used: i64,
+}
+
+pub fn wait(pid: i32) -> Result<ExitStatus> {
+    let start = SystemTime::now();
+    let mut status = 0;
+    let mut rusage = libc::rusage {
+        ru_utime: libc::timeval {
+            tv_sec: 0 as time_t,
+            tv_usec: 0 as suseconds_t,
+        },
+        ru_stime: libc::timeval {
+            tv_sec: 0 as time_t,
+            tv_usec: 0 as suseconds_t,
+        },
+        ru_maxrss: 0 as c_long,
+        ru_ixrss: 0 as c_long,
+        ru_idrss: 0 as c_long,
+        ru_isrss: 0 as c_long,
+        ru_minflt: 0 as c_long,
+        ru_majflt: 0 as c_long,
+        ru_nswap: 0 as c_long,
+        ru_inblock: 0 as c_long,
+        ru_oublock: 0 as c_long,
+        ru_msgsnd: 0 as c_long,
+        ru_msgrcv: 0 as c_long,
+        ru_nsignals: 0 as c_long,
+        ru_nvcsw: 0 as c_long,
+        ru_nivcsw: 0 as c_long,
+    };
+    unsafe {
+        let val = libc::wait4(pid, &mut status, 0, &mut rusage);
+        if val < 0 {
+            return Err(Error::WaitError(io::Error::last_os_error().raw_os_error()));
+        }
+    }
+    let time_used = rusage.ru_utime.tv_sec * 1000
+        + rusage.ru_utime.tv_usec / 1000
+        + rusage.ru_stime.tv_sec * 1000
+        + rusage.ru_stime.tv_usec / 1000;
+    let memory_used = rusage.ru_maxrss;
+    let real_time_used = match start.elapsed() {
+        Ok(elapsed) => elapsed.as_millis(),
+        Err(err) => return Err(Error::SystemTimeError(err)),
+    };
+    println!("time used: {}", time_used);
+    println!("real time used: {}", real_time_used);
+    println!("memory used: {}", rusage.ru_maxrss);
+    Ok(ExitStatus {
+        rusage,
+        status,
+        time_used,
+        real_time_used,
+        memory_used,
+    })
+}
+
 pub fn run_one(judge_config: &JudgeConfig, test_case: &TestCase, workdir: &Path) -> Result<()> {
     println!("running test case: {}", test_case.index);
     let pid;
 
+    // 这个操作就需要 1-2ms 左右，此处预先完成，不占用子进程运行时间
+    // 因此，父进程需要 drop 这个结构，需要保证没有内存泄漏
+    let exec_args = ExecArgs::build(
+        &judge_config.code.language.run_command.clone(),
+        &judge_config,
+    )?;
     unsafe {
         pid = libc::fork();
     }
@@ -154,11 +224,6 @@ pub fn run_one(judge_config: &JudgeConfig, test_case: &TestCase, workdir: &Path)
         // 修改工作目录
         env::set_current_dir(workdir).unwrap();
 
-        let exec_args = ExecArgs::build(
-            &judge_config.code.language.run_command.clone(),
-            &judge_config,
-        )
-        .unwrap();
         unsafe {
             libc::execve(exec_args.pathname, exec_args.argv, exec_args.envp);
         }
@@ -167,10 +232,33 @@ pub fn run_one(judge_config: &JudgeConfig, test_case: &TestCase, workdir: &Path)
         panic!("How dare you!");
     } else if pid > 0 {
         // 父进程
-        println!("pid: {}", pid);
-        println!("{:?}", workdir);
+        let _ = wait(pid)?;
     } else {
         // 异常
+        return Err(Error::ForkError(io::Error::last_os_error().raw_os_error()));
+    }
+    Ok(())
+}
+
+pub fn compile(judge_config: &JudgeConfig, workdir: &Path) -> Result<()> {
+    let pid;
+    unsafe {
+        pid = libc::fork();
+    }
+    if pid == 0 {
+        env::set_current_dir(workdir).unwrap();
+        let exec_args = ExecArgs::build(
+            &judge_config.code.language.compile_command.clone(),
+            &judge_config,
+        )
+        .unwrap();
+        unsafe {
+            libc::execve(exec_args.pathname, exec_args.argv, exec_args.envp);
+        }
+        panic!("How dare you!");
+    } else if pid > 0 {
+        let _ = wait(pid)?;
+    } else {
         return Err(Error::ForkError(io::Error::last_os_error().raw_os_error()));
     }
     Ok(())
