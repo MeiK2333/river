@@ -27,6 +27,7 @@ pub enum Error {
     ForkError(Option<i32>),
     WaitError(Option<i32>),
     SystemTimeError(time::SystemTimeError),
+    RemoveFileError(String, Option<i32>),
 }
 
 pub type Result<T> = result::Result<T, Error>;
@@ -66,6 +67,10 @@ impl fmt::Display for Error {
             Error::WaitError(errno) => {
                 let reason = errno_str(errno);
                 write!(f, "WaitError: {}", reason)
+            }
+            Error::RemoveFileError(ref filename, errno) => {
+                let reason = errno_str(errno);
+                write!(f, "RemoveFileError: `{}` {}", filename, reason)
             }
             _ => write!(f, "{:?}", self),
         }

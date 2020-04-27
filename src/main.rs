@@ -23,7 +23,7 @@ fn main() {
     let language = config.language_config_from_name("python");
     println!("{}", language.unwrap());
 
-    let judge_config = match judger::JudgeConfig::load(&config, "example/hello_world") {
+    let judge_config = match judger::JudgeConfig::load(&config, "example/a_plus_b") {
         Ok(value) => value,
         Err(err) => {
             eprintln!("{}", err);

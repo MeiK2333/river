@@ -1,6 +1,6 @@
 extern crate libc;
 
-use super::error::{Error, Result};
+use super::error::{errno_str, Error, Result};
 use super::judger::{JudgeConfig, TestCase};
 use handlebars::Handlebars;
 use libc::{c_long, suseconds_t, time_t};
@@ -133,7 +133,18 @@ pub fn run(judge_config: &JudgeConfig) -> Result<()> {
     }
     let _ = compile(judge_config, to_dir)?;
     for test_case in &judge_config.tests {
+        println!("\n----------------------------------\n");
         let _ = run_one(judge_config, test_case, to_dir)?;
+        let output_file_path = to_dir.join(&test_case.output_file);
+        match fs::remove_file(output_file_path) {
+            Ok(_) => {}
+            Err(_) => {
+                return Err(Error::RemoveFileError(
+                    test_case.output_file.clone(),
+                    io::Error::last_os_error().raw_os_error(),
+                ))
+            }
+        };
     }
     match pwd.close() {
         Ok(_) => {}
@@ -192,9 +203,9 @@ pub fn wait(pid: i32) -> Result<ExitStatus> {
         Ok(elapsed) => elapsed.as_millis(),
         Err(err) => return Err(Error::SystemTimeError(err)),
     };
-    println!("time used: {}", time_used);
-    println!("real time used: {}", real_time_used);
-    println!("memory used: {}", rusage.ru_maxrss);
+    println!("time used:\t{}", time_used);
+    println!("real time used:\t{}", real_time_used);
+    println!("memory used:\t{}", rusage.ru_maxrss);
     Ok(ExitStatus {
         rusage,
         status,
@@ -202,6 +213,22 @@ pub fn wait(pid: i32) -> Result<ExitStatus> {
         real_time_used,
         memory_used,
     })
+}
+
+pub unsafe fn dup(filename: &str, to: libc::c_int, flag: libc::c_int, mode: libc::c_int) {
+    let filename_str = CString::new(filename).unwrap();
+    let filename = filename_str.as_ptr();
+    let fd = libc::open(filename, flag, mode);
+    if fd < 0 {
+        let err = io::Error::last_os_error().raw_os_error();
+        eprintln!("open filure!");
+        panic!(errno_str(err));
+    }
+    if libc::dup2(fd, to) < 0 {
+        let err = io::Error::last_os_error().raw_os_error();
+        eprintln!("dup2 filure!");
+        panic!(errno_str(err));
+    }
 }
 
 pub fn run_one(judge_config: &JudgeConfig, test_case: &TestCase, workdir: &Path) -> Result<()> {
@@ -223,8 +250,19 @@ pub fn run_one(judge_config: &JudgeConfig, test_case: &TestCase, workdir: &Path)
 
         // 修改工作目录
         env::set_current_dir(workdir).unwrap();
-
         unsafe {
+            dup(
+                &test_case.input_file,
+                libc::STDIN_FILENO,
+                libc::O_RDONLY,
+                0644,
+            );
+            dup(
+                &test_case.output_file,
+                libc::STDOUT_FILENO,
+                libc::O_CREAT | libc::O_RDWR,
+                0644,
+            );
             libc::execve(exec_args.pathname, exec_args.argv, exec_args.envp);
         }
         // 理论上，不会走到这里，在上一句 exec 后，程序就已经被替换为待执行程序了

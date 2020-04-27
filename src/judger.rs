@@ -9,6 +9,7 @@ use yaml_rust::{Yaml, YamlLoader};
 pub struct TestCase {
     pub index: u32,
     pub input_file: String,
+    pub output_file: String,
     pub answer_file: String,
     pub cpu_time_limit: u32,
     pub real_time_limit: u32,
@@ -144,12 +145,14 @@ impl JudgeConfig {
                     ))
                 }
             };
+            let output_file = "output.txt".to_string();
             tests.push(TestCase {
                 index,
                 cpu_time_limit,
                 real_time_limit,
                 memory_limit,
                 input_file,
+                output_file,
                 answer_file,
             });
             index += 1;
