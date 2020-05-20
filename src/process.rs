@@ -2,6 +2,8 @@ extern crate libc;
 
 use super::error::{errno_str, Error, Result};
 use super::judger::{JudgeConfig, TestCase};
+use super::result::{ExitStatus, TestCaseResult};
+
 use handlebars::Handlebars;
 use libc::{c_long, suseconds_t, time_t};
 use std::collections::BTreeMap;
@@ -131,11 +133,14 @@ pub fn run(judge_config: &JudgeConfig) -> Result<()> {
             Err(err) => return Err(Error::CopyFileError(err)),
         };
     }
+    // TODO: 处理 CE 与 RE（编译期间程序运行出错为 CE，运行期间出错为 RE）
     let _ = compile(judge_config, to_dir)?;
     for test_case in &judge_config.tests {
-        println!("\n----------------------------------\n");
-        let _ = run_one(judge_config, test_case, to_dir)?;
+        let exit_status = run_one(judge_config, test_case, to_dir)?;
         let output_file_path = to_dir.join(&test_case.output_file);
+        let answer_file_path = from_dir.join(&test_case.answer_file);
+        let res = TestCaseResult::standard(&output_file_path, &answer_file_path, exit_status);
+        println!("{:?}", res);
         match fs::remove_file(output_file_path) {
             Ok(_) => {}
             Err(_) => {
@@ -151,14 +156,6 @@ pub fn run(judge_config: &JudgeConfig) -> Result<()> {
         Err(err) => return Err(Error::CloseTempDirError(err)),
     };
     Ok(())
-}
-
-pub struct ExitStatus {
-    pub rusage: libc::rusage,
-    pub status: i32,
-    pub time_used: i64,
-    pub real_time_used: u128,
-    pub memory_used: i64,
 }
 
 pub fn wait(pid: i32) -> Result<ExitStatus> {
@@ -203,9 +200,6 @@ pub fn wait(pid: i32) -> Result<ExitStatus> {
         Ok(elapsed) => elapsed.as_millis(),
         Err(err) => return Err(Error::SystemTimeError(err)),
     };
-    println!("time used:\t{}", time_used);
-    println!("real time used:\t{}", real_time_used);
-    println!("memory used:\t{}", rusage.ru_maxrss);
     Ok(ExitStatus {
         rusage,
         status,
@@ -231,8 +225,11 @@ pub unsafe fn dup(filename: &str, to: libc::c_int, flag: libc::c_int, mode: libc
     }
 }
 
-pub fn run_one(judge_config: &JudgeConfig, test_case: &TestCase, workdir: &Path) -> Result<()> {
-    println!("running test case: {}", test_case.index);
+pub fn run_one(
+    judge_config: &JudgeConfig,
+    test_case: &TestCase,
+    workdir: &Path,
+) -> Result<ExitStatus> {
     let pid;
 
     // 这个操作就需要 1-2ms 左右，此处预先完成，不占用子进程运行时间
@@ -255,13 +252,13 @@ pub fn run_one(judge_config: &JudgeConfig, test_case: &TestCase, workdir: &Path)
                 &test_case.input_file,
                 libc::STDIN_FILENO,
                 libc::O_RDONLY,
-                0644,
+                0o644,
             );
             dup(
                 &test_case.output_file,
                 libc::STDOUT_FILENO,
                 libc::O_CREAT | libc::O_RDWR,
-                0644,
+                0o644,
             );
             libc::execve(exec_args.pathname, exec_args.argv, exec_args.envp);
         }
@@ -270,12 +267,12 @@ pub fn run_one(judge_config: &JudgeConfig, test_case: &TestCase, workdir: &Path)
         panic!("How dare you!");
     } else if pid > 0 {
         // 父进程
-        let _ = wait(pid)?;
+        let exit_status = wait(pid)?;
+        return Ok(exit_status);
     } else {
         // 异常
         return Err(Error::ForkError(io::Error::last_os_error().raw_os_error()));
     }
-    Ok(())
 }
 
 pub fn compile(judge_config: &JudgeConfig, workdir: &Path) -> Result<()> {

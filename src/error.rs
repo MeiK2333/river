@@ -28,6 +28,8 @@ pub enum Error {
     WaitError(Option<i32>),
     SystemTimeError(time::SystemTimeError),
     RemoveFileError(String, Option<i32>),
+
+    OpenFileError(String, Option<i32>),
 }
 
 pub type Result<T> = result::Result<T, Error>;
@@ -55,6 +57,10 @@ impl fmt::Display for Error {
             Error::ReadFileError(ref filename, errno) => {
                 let reason = errno_str(errno);
                 write!(f, "ReadFileError: `{}` {}", filename, reason)
+            }
+            Error::OpenFileError(ref filename, errno) => {
+                let reason = errno_str(errno);
+                write!(f, "OpenFileError: `{}` {}", filename, reason)
             }
             Error::UnknownJudgeType(ref judge_type) => {
                 write!(f, "UnknownJudgeType: {}", judge_type)
