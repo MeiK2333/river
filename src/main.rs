@@ -36,6 +36,7 @@ fn main() {
     match process::run(&judge_config) {
         Ok(_) => {}
         Err(err) => {
+            // TODO: SE
             eprintln!("{}", err);
             return;
         }

@@ -134,11 +134,18 @@ pub fn run(judge_config: &JudgeConfig) -> Result<()> {
         };
     }
     // TODO: 处理 CE 与 RE（编译期间程序运行出错为 CE，运行期间出错为 RE）
-    let _ = compile(judge_config, to_dir)?;
+    let compile_status = compile(judge_config, to_dir)?;
+    if !compile_status.exited {
+        // TODO: CE
+    }
+
     for test_case in &judge_config.tests {
         let exit_status = run_one(judge_config, test_case, to_dir)?;
         let output_file_path = to_dir.join(&test_case.output_file);
         let answer_file_path = from_dir.join(&test_case.answer_file);
+        if !exit_status.exited {
+            // TODO: RE
+        }
         let res = TestCaseResult::standard(&output_file_path, &answer_file_path, exit_status);
         println!("{:?}", res);
         match fs::remove_file(output_file_path) {
@@ -151,10 +158,11 @@ pub fn run(judge_config: &JudgeConfig) -> Result<()> {
             }
         };
     }
-    match pwd.close() {
-        Ok(_) => {}
-        Err(err) => return Err(Error::CloseTempDirError(err)),
-    };
+    println!("{:?}", pwd);
+    // match pwd.close() {
+    //     Ok(_) => {}
+    //     Err(err) => return Err(Error::CloseTempDirError(err)),
+    // };
     Ok(())
 }
 
@@ -200,9 +208,26 @@ pub fn wait(pid: i32) -> Result<ExitStatus> {
         Ok(elapsed) => elapsed.as_millis(),
         Err(err) => return Err(Error::SystemTimeError(err)),
     };
+    let signal = unsafe {
+        if libc::WIFSIGNALED(status) {
+            libc::WTERMSIG(status)
+        } else if libc::WIFSTOPPED(status) {
+            libc::WSTOPSIG(status)
+        } else {
+            0
+        }
+    };
+    let exited = unsafe { libc::WIFEXITED(status) };
+    if exited {
+        status = unsafe { libc::WEXITSTATUS(status) };
+    }
+    let coredump = unsafe { libc::WCOREDUMP(status) };
     Ok(ExitStatus {
         rusage,
         status,
+        signal,
+        exited,
+        coredump,
         time_used,
         real_time_used,
         memory_used,
@@ -267,15 +292,14 @@ pub fn run_one(
         panic!("How dare you!");
     } else if pid > 0 {
         // 父进程
-        let exit_status = wait(pid)?;
-        return Ok(exit_status);
+        return Ok(wait(pid)?);
     } else {
         // 异常
         return Err(Error::ForkError(io::Error::last_os_error().raw_os_error()));
     }
 }
 
-pub fn compile(judge_config: &JudgeConfig, workdir: &Path) -> Result<()> {
+pub fn compile(judge_config: &JudgeConfig, workdir: &Path) -> Result<ExitStatus> {
     let pid;
     unsafe {
         pid = libc::fork();
@@ -292,9 +316,8 @@ pub fn compile(judge_config: &JudgeConfig, workdir: &Path) -> Result<()> {
         }
         panic!("How dare you!");
     } else if pid > 0 {
-        let _ = wait(pid)?;
+        return Ok(wait(pid)?);
     } else {
         return Err(Error::ForkError(io::Error::last_os_error().raw_os_error()));
     }
-    Ok(())
 }

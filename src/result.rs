@@ -6,15 +6,12 @@ use std::fs::File;
 use std::io::{self, BufRead, BufReader};
 use std::path::Path;
 
-#[derive(Debug, Copy, Clone)]
-pub struct ResourceUsed {
-    pub time_used: i64,
-    pub memory_used: i64,
-}
-
 pub struct ExitStatus {
     pub rusage: libc::rusage,
     pub status: i32,
+    pub signal: i32,
+    pub exited: bool,
+    pub coredump: bool,
     pub time_used: i64,
     pub real_time_used: u128,
     pub memory_used: i64,
@@ -22,11 +19,11 @@ pub struct ExitStatus {
 
 #[derive(Debug, Clone)]
 pub enum TestCaseResult {
-    Accepted(ResourceUsed),
-    CompileError(ResourceUsed, String),
-    WrongAnswer(ResourceUsed),
-    RuntimeError(ResourceUsed, String),
-    SystemError(ResourceUsed, String),
+    Accepted,
+    CompileError(String),
+    WrongAnswer,
+    RuntimeError(String),
+    SystemError(String),
 }
 
 impl fmt::Display for TestCaseResult {
@@ -45,10 +42,9 @@ impl TestCaseResult {
         println!("time used:\t{}", exit_status.time_used);
         println!("real time used:\t{}", exit_status.real_time_used);
         println!("memory used:\t{}", exit_status.rusage.ru_maxrss);
-        let used = ResourceUsed {
-            time_used: exit_status.time_used,
-            memory_used: exit_status.rusage.ru_maxrss,
-        };
+        println!("status:\t{}", exit_status.status);
+        println!("signal:\t{}", exit_status.signal);
+        println!("exited:\t{}", exit_status.exited);
 
         let output_filename = match output_file.as_ref().to_str() {
             Some(val) => val,
@@ -108,13 +104,13 @@ impl TestCaseResult {
                 break;
             }
             if output_buffer.trim_end() != answer_buffer.trim_end() {
-                return Ok(TestCaseResult::WrongAnswer(used));
+                return Ok(TestCaseResult::WrongAnswer);
             }
         }
         // 末尾的空白字符不影响结果
         while output_bytes != 0 {
             if output_buffer.trim() != "" {
-                return Ok(TestCaseResult::WrongAnswer(used));
+                return Ok(TestCaseResult::WrongAnswer);
             }
             output_bytes = match output_reader.read_line(&mut output_buffer) {
                 Ok(val) => val,
@@ -128,7 +124,7 @@ impl TestCaseResult {
         }
         while answer_bytes != 0 {
             if answer_buffer.trim() != "" {
-                return Ok(TestCaseResult::WrongAnswer(used));
+                return Ok(TestCaseResult::WrongAnswer);
             }
             answer_bytes = match answer_reader.read_line(&mut answer_buffer) {
                 Ok(val) => val,
@@ -141,6 +137,6 @@ impl TestCaseResult {
             };
         }
 
-        Ok(TestCaseResult::Accepted(used))
+        Ok(TestCaseResult::Accepted)
     }
 }

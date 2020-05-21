@@ -21,7 +21,7 @@ pub enum Error {
     TemplateRenderError(RenderError),
     LanguageConfigError(String),
     CreateTempDirError(io::Error),
-    CloseTempDirError(io::Error),
+    // CloseTempDirError(io::Error),
     CopyFileError(io::Error),
     OsStringToStringError(OsString),
     ForkError(Option<i32>),
