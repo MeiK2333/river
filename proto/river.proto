@@ -1,0 +1,54 @@
+syntax = "proto3";
+package river;
+
+service River {
+  rpc Judge(stream JudgeRequest) returns (stream JudgeResponse) {}
+}
+
+message JudgeRequest {
+  enum Language {
+    C = 0;
+    Cpp = 1;
+    Python = 2;
+    Rust = 3;
+    Node = 4;
+    TypeScript = 5;
+    Go = 6;
+  }
+  Language language = 1;
+
+  string code = 2;
+
+  enum JudgeType {
+    Standard = 0;
+    // Special = 1;
+  }
+  JudgeType judge_type = 3;
+
+  string in_data = 4;
+  string out_data = 5;
+
+  int32 time_limit = 6;
+  int32 memory_limit = 7;
+}
+
+message JudgeResponse {
+  int32 time_used = 1;
+  int32 memory_used = 2;
+  enum JudgeResult {
+    Accepted = 0;
+    WrongAnswer = 1;
+    TimeLimitExceeded = 2;
+    MemoryLimitExceeded = 3;
+    RuntimeError = 4;
+    OutputLimitExceeded = 5;
+    CompileError = 6;
+    PresentationError = 7;
+    SystemError = 8;
+  }
+  JudgeResult result = 3;
+  int32 errno = 4;
+  int32 exit_code = 5;
+  string stdout = 6;
+  string stderr = 7;
+}
