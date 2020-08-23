@@ -45,6 +45,9 @@ message JudgeResponse {
     CompileError = 6;
     PresentationError = 7;
     SystemError = 8;
+    Pending = 9;
+    Compiling = 10;
+    Running = 11;
   }
   JudgeResult result = 3;
   int32 errno = 4;

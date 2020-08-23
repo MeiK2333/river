@@ -1,10 +1,11 @@
+use futures::StreamExt;
 use futures_core::Stream;
 use river::river_server::{River, RiverServer};
 use river::{JudgeRequest, JudgeResponse};
 use std::pin::Pin;
-use std::sync::Arc;
-use tokio::sync::mpsc;
-use tonic::{transport::Server, Request, Response, Status};
+use tokio::time::{delay_for, Duration};
+use tonic::transport::Server;
+use tonic::{Request, Response, Status};
 
 pub mod river {
     tonic::include_proto!("river"); // The string specified here must match the proto package name
@@ -25,7 +26,7 @@ impl River for RiverService {
         let mut stream = request.into_inner();
 
         let output = async_stream::try_stream! {
-            // while let Some(note) = stream.next().await {
+            while let Some(note) = stream.next().await {
                 yield river::JudgeResponse {
                     time_used: 1,
                     memory_used: 2,
@@ -35,7 +36,8 @@ impl River for RiverService {
                     stdout: "stdout".into(),
                     stderr: "stderr".into(),
                 };
-            // }
+                delay_for(Duration::from_millis(10000)).await;
+            }
         };
 
         Ok(Response::new(Box::pin(output) as Self::JudgeStream))
@@ -44,7 +46,7 @@ impl River for RiverService {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let addr = "[::1]:50051".parse()?;
+    let addr = "127.0.0.1:4003".parse()?;
     let greeter = RiverService::default();
 
     Server::builder()
