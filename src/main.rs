@@ -1,14 +1,20 @@
+#![recursion_limit = "256"]
+
+use crate::river::judge_response::JudgeResult;
 use futures::StreamExt;
 use futures_core::Stream;
 use river::river_server::{River, RiverServer};
 use river::{JudgeRequest, JudgeResponse};
 use std::pin::Pin;
-use tokio::time::{delay_for, Duration};
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 
+mod error;
+mod judger;
+mod process;
+
 pub mod river {
-    tonic::include_proto!("river"); // The string specified here must match the proto package name
+    tonic::include_proto!("river");
 }
 
 #[derive(Debug, Default)]
@@ -26,18 +32,36 @@ impl River for RiverService {
         let mut stream = request.into_inner();
 
         let output = async_stream::try_stream! {
-            while let Some(note) = stream.next().await {
-                yield river::JudgeResponse {
-                    time_used: 1,
-                    memory_used: 2,
-                    result: 0,
-                    errno: 0,
-                    exit_code: 0,
-                    stdout: "stdout".into(),
-                    stderr: "stderr".into(),
+            let mut need_compile = true;
+            while let Some(req) = stream.next().await {
+                // TODO: 使用锁或者资源量等机制限制并发
+                yield judger::pending();
+                let req = req?;
+
+                // 首次获取流进行编译
+                if need_compile {
+                    yield judger::compiling();
+                    let result = match judger::compile(&req).await {
+                        Ok(res) => res,
+                        Err(e) => error::system_error(e)
+                    };
+                    // 如果编译错误，则不进行后续流程
+                    if result.result != JudgeResult::Accepted as i32 {
+                        yield result;
+                        break;
+                    }
+                }
+                need_compile = false;
+
+                yield judger::running();
+                let result = match judger::judger(&req).await {
+                    Ok(res) => res,
+                    Err(e) => error::system_error(e)
                 };
-                delay_for(Duration::from_millis(10000)).await;
+
+                yield result;
             }
+            while let Some(_) = stream.next().await {}
         };
 
         Ok(Response::new(Box::pin(output) as Self::JudgeStream))
