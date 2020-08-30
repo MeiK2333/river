@@ -31,7 +31,6 @@ pub async fn compile(request: &JudgeRequest, path: &Path) -> Result<JudgeRespons
         Some(Language::Go) => "main.go",
         None => return Err(Error::LanguageNotFound(request.language)),
     };
-
     if let Err(e) = fs::write(path.join(filename), request.code.clone()).await {
         return Err(Error::FileWriteError(e));
     };
