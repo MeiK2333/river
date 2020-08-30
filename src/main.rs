@@ -6,6 +6,7 @@ use futures_core::Stream;
 use river::river_server::{River, RiverServer};
 use river::{JudgeRequest, JudgeResponse};
 use std::pin::Pin;
+use tempfile::tempdir_in;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 
@@ -33,15 +34,27 @@ impl River for RiverService {
 
         let output = async_stream::try_stream! {
             let mut need_compile = true;
+            // TODO: 使用锁或者资源量等机制限制并发
+            yield judger::pending();
+
+            // 创建评测使用的临时目录
+            // 无需主动删除，变量在 drop 之后会自动删除临时文件夹
+            let pwd = match tempdir_in("./runner") {
+                Ok(val) => val,
+                Err(err) => {
+                    yield error::system_error(error::Error::CreateTempDirError(err));
+                    return
+                },
+            };
+
+            println!("{:?}", pwd);
             while let Some(req) = stream.next().await {
-                // TODO: 使用锁或者资源量等机制限制并发
-                yield judger::pending();
                 let req = req?;
 
                 // 首次获取流进行编译
                 if need_compile {
                     yield judger::compiling();
-                    let result = match judger::compile(&req).await {
+                    let result = match judger::compile(&req, &pwd.path()).await {
                         Ok(res) => res,
                         Err(e) => error::system_error(e)
                     };

@@ -1,6 +1,9 @@
-use super::error::Result;
+use super::error::{Error, Result};
+use crate::river::judge_request::Language;
 use crate::river::judge_response::{JudgeResult, JudgeStatus};
 use crate::river::{JudgeRequest, JudgeResponse};
+use std::path::Path;
+use tokio::fs;
 
 pub async fn judger(request: &JudgeRequest) -> Result<JudgeResponse> {
     return Ok(JudgeResponse {
@@ -16,7 +19,23 @@ pub async fn judger(request: &JudgeRequest) -> Result<JudgeResponse> {
     });
 }
 
-pub async fn compile(request: &JudgeRequest) -> Result<JudgeResponse> {
+pub async fn compile(request: &JudgeRequest, path: &Path) -> Result<JudgeResponse> {
+    // 写入代码
+    let filename = match Language::from_i32(request.language) {
+        Some(Language::C) => "main.c",
+        Some(Language::Cpp) => "main.cpp",
+        Some(Language::Python) => "main.py",
+        Some(Language::Rust) => "main.rs",
+        Some(Language::Node) => "main.js",
+        Some(Language::TypeScript) => "main.ts",
+        Some(Language::Go) => "main.go",
+        None => return Err(Error::LanguageNotFound(request.language)),
+    };
+
+    if let Err(e) = fs::write(path.join(filename), request.code.clone()).await {
+        return Err(Error::FileWriteError(e));
+    };
+
     return Ok(JudgeResponse {
         time_used: request.time_limit,
         memory_used: 2,

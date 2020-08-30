@@ -1,10 +1,15 @@
 use crate::river::judge_response::{JudgeResult, JudgeStatus};
 use crate::river::JudgeResponse;
 use std::fmt;
+use std::io;
 use std::result;
 
 #[derive(Debug)]
-pub enum Error {}
+pub enum Error {
+    CreateTempDirError(io::Error),
+    LanguageNotFound(i32),
+    FileWriteError(io::Error),
+}
 
 pub type Result<T> = result::Result<T, Error>;
 
