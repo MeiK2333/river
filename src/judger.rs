@@ -1,4 +1,5 @@
 use super::error::{Error, Result};
+use super::process::Process;
 use crate::river::judge_request::Language;
 use crate::river::judge_response::{JudgeResult, JudgeStatus};
 use crate::river::{JudgeRequest, JudgeResponse};
@@ -34,6 +35,10 @@ pub async fn compile(request: &JudgeRequest, path: &Path) -> Result<JudgeRespons
     if let Err(e) = fs::write(path.join(filename), request.code.clone()).await {
         return Err(Error::FileWriteError(e));
     };
+
+    let process = Process::new();
+    let status = process.await?;
+    println!("{}", status.exit_code);
 
     return Ok(JudgeResponse {
         time_used: request.time_limit,

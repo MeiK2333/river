@@ -11,12 +11,12 @@ pub enum Error {
     CreateTempDirError(io::Error),
     LanguageNotFound(i32),
     FileWriteError(io::Error),
-    ForkError(Option<i32>),
+    ChannelRecvError,
 }
 
 pub type Result<T> = result::Result<T, Error>;
 
-pub fn errno_str(errno: Option<i32>) -> String {
+pub fn _errno_str(errno: Option<i32>) -> String {
     match errno {
         Some(no) => {
             let stre = unsafe { strerror(no) };
@@ -30,10 +30,6 @@ pub fn errno_str(errno: Option<i32>) -> String {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Error::ForkError(errno) => {
-                let reason = errno_str(errno);
-                write!(f, "ForkError: {}", reason)
-            }
             _ => write!(f, "{:?}", self),
         }
     }
