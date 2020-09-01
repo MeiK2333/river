@@ -1,7 +1,7 @@
 use crate::river::judge_response::{JudgeResult, JudgeStatus};
 use crate::river::JudgeResponse;
 use libc::strerror;
-use std::ffi::CStr;
+use std::ffi::{CStr, NulError, OsString};
 use std::fmt;
 use std::io;
 use std::result;
@@ -12,6 +12,8 @@ pub enum Error {
     LanguageNotFound(i32),
     FileWriteError(io::Error),
     ChannelRecvError,
+    StringToCStringError(NulError),
+    OsStringToStringError(OsString),
 }
 
 pub type Result<T> = result::Result<T, Error>;

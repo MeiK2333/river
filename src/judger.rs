@@ -6,21 +6,30 @@ use crate::river::{JudgeRequest, JudgeResponse};
 use std::path::Path;
 use tokio::fs;
 
+impl JudgeResponse {
+    fn new() -> JudgeResponse {
+        JudgeResponse {
+            time_used: 0,
+            memory_used: 0,
+            result: JudgeResult::Accepted as i32,
+            errno: 0,
+            exit_code: 0,
+            stdout: "".into(),
+            stderr: "".into(),
+            errmsg: "".into(),
+            status: JudgeStatus::Running as i32,
+        }
+    }
+}
+
 pub async fn judger(request: &JudgeRequest) -> Result<JudgeResponse> {
-    return Ok(JudgeResponse {
-        time_used: request.time_limit,
-        memory_used: 2,
-        result: JudgeResult::Accepted as i32,
-        errno: 0,
-        exit_code: 0,
-        stdout: "stdout".into(),
-        stderr: "stderr".into(),
-        errmsg: "".into(),
-        status: JudgeStatus::Ended as i32,
-    });
+    let mut resp = JudgeResponse::new();
+    resp.time_used = request.time_limit;
+    return Ok(resp);
 }
 
 pub async fn compile(request: &JudgeRequest, path: &Path) -> Result<JudgeResponse> {
+    let mut resp = JudgeResponse::new();
     // 写入代码
     let filename = match Language::from_i32(request.language) {
         Some(Language::C) => "main.c",
@@ -36,21 +45,29 @@ pub async fn compile(request: &JudgeRequest, path: &Path) -> Result<JudgeRespons
         return Err(Error::FileWriteError(e));
     };
 
-    let process = Process::new();
-    let status = process.await?;
-    println!("{}", status.exit_code);
+    let mut process = Process::new();
+    let cmd = match Language::from_i32(request.language) {
+        Some(Language::C) => "gcc main.c",
+        Some(Language::Cpp) => "g++ main.cpp",
+        Some(Language::Python) => "/usr/bin/python3 -m compileall main.py",
+        Some(Language::Rust) => "rustc main.rs",
+        // 无需编译的语言直接返回
+        Some(Language::Node) => return Ok(resp),
+        Some(Language::TypeScript) => "tsc",
+        Some(Language::Go) => "main.go",
+        None => return Err(Error::LanguageNotFound(request.language)),
+    };
+    process.cmd = cmd.to_string();
+    process.workdir = path.to_path_buf();
+    process.time_limit = request.time_limit;
+    process.memory_limit = request.memory_limit;
 
-    return Ok(JudgeResponse {
-        time_used: request.time_limit,
-        memory_used: 2,
-        result: JudgeResult::Accepted as i32,
-        errno: 0,
-        exit_code: 0,
-        stdout: "stdout".into(),
-        stderr: "stderr".into(),
-        errmsg: "".into(),
-        status: JudgeStatus::Ended as i32,
-    });
+    let status = process.await?;
+    if status.exit_code != 0 {
+        resp.result = JudgeResult::CompileError as i32;
+        resp.status = JudgeStatus::Ended as i32;
+    }
+    return Ok(resp);
 }
 
 pub fn pending() -> JudgeResponse {

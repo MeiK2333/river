@@ -1,7 +1,12 @@
 use super::error::{Error, Result};
 use libc;
+use std::env;
+use std::ffi::CString;
 use std::future::Future;
+use std::mem;
+use std::path::PathBuf;
 use std::pin::Pin;
+use std::ptr;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
@@ -11,6 +16,7 @@ use std::time::SystemTime;
 #[derive(Clone)]
 pub struct Process {
     pub pid: i32,
+    pub workdir: PathBuf,
     pub time_limit: i32,
     pub memory_limit: i32,
     pub stdin_fd: i32,
@@ -32,6 +38,7 @@ impl Process {
             stdout_fd: -1,
             stderr_fd: -1,
             cmd: "".to_string(),
+            workdir: PathBuf::from(""),
             tx: Arc::new(Mutex::new(tx)),
             rx: Arc::new(Mutex::new(rx)),
         }
@@ -91,12 +98,86 @@ impl Future for Process {
     }
 }
 
-fn run(_process: Process) {
-    unsafe {
-        // TODO
-        println!("run");
-        libc::exit(1);
+pub struct ExecArgs {
+    pub pathname: *const libc::c_char,
+    pub argv: *const *const libc::c_char,
+    pub envp: *const *const libc::c_char,
+}
+
+impl ExecArgs {
+    fn build(cmd: &String) -> Result<ExecArgs> {
+        let cmds: Vec<&str> = cmd.split_whitespace().collect();
+        let pathname = cmds[0].clone();
+        let pathname_str = match CString::new(pathname) {
+            Ok(value) => value,
+            Err(err) => return Err(Error::StringToCStringError(err)),
+        };
+        let pathname = pathname_str.as_ptr();
+
+        let mut argv_vec: Vec<*const libc::c_char> = vec![];
+        for item in cmds.iter() {
+            let cstr = match CString::new(item.clone()) {
+                Ok(value) => value,
+                Err(err) => return Err(Error::StringToCStringError(err)),
+            };
+            let cptr = cstr.as_ptr();
+            // 需要使用 mem::forget 来标记
+            // 否则在此次循环结束后，cstr 就会被回收，后续 exec 函数无法通过指针获取到字符串内容
+            mem::forget(cstr);
+            argv_vec.push(cptr);
+        }
+        // argv 与 envp 的参数需要使用 NULL 来标记结束
+        argv_vec.push(ptr::null());
+        let argv: *const *const libc::c_char = argv_vec.as_ptr() as *const *const libc::c_char;
+
+        // env 环境变量传递当前进程环境变量
+        let mut envp_vec: Vec<*const libc::c_char> = vec![];
+        for (key, value) in env::vars_os() {
+            let mut key = match key.to_str() {
+                Some(val) => val.to_string(),
+                None => return Err(Error::OsStringToStringError(key)),
+            };
+            let value = match value.to_str() {
+                Some(val) => val.to_string(),
+                None => return Err(Error::OsStringToStringError(value)),
+            };
+            key.push_str("=");
+            key.push_str(&value);
+            let cstr = match CString::new(key) {
+                Ok(value) => value,
+                Err(err) => return Err(Error::StringToCStringError(err)),
+            };
+            let cptr = cstr.as_ptr();
+            // 需要使用 mem::forget 来标记
+            // 否则在此次循环结束后，cstr 就会被回收，后续 exec 函数无法通过指针获取到字符串内容
+            mem::forget(cstr);
+            envp_vec.push(cptr);
+        }
+        envp_vec.push(ptr::null());
+        let envp = envp_vec.as_ptr() as *const *const libc::c_char;
+
+        mem::forget(pathname_str);
+        mem::forget(argv_vec);
+        mem::forget(envp_vec);
+        Ok(ExecArgs {
+            pathname,
+            argv,
+            envp,
+        })
     }
+}
+
+fn run(process: Process) {
+    // 子进程里崩溃也无法返回，崩溃就直接崩溃了
+    let exec_args = ExecArgs::build(&process.cmd).unwrap();
+    // 修改工作目录
+    env::set_current_dir(process.workdir).unwrap();
+    println!("{}", process.cmd);
+    unsafe {
+        // TODO: 资源限制等
+        libc::execve(exec_args.pathname, exec_args.argv, exec_args.envp);
+    }
+    panic!("How dare you!");
 }
 
 fn wait(pid: i32) -> ProcessStatus {
