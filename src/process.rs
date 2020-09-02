@@ -1,8 +1,10 @@
-use super::error::{Error, Result};
+use super::error::{errno_str, Error, Result};
 use libc;
 use std::env;
 use std::ffi::CString;
+use std::fs;
 use std::future::Future;
+use std::io;
 use std::mem;
 use std::path::PathBuf;
 use std::pin::Pin;
@@ -19,9 +21,9 @@ pub struct Process {
     pub workdir: PathBuf,
     pub time_limit: i32,
     pub memory_limit: i32,
-    pub stdin_fd: i32,
-    pub stdout_fd: i32,
-    pub stderr_fd: i32,
+    pub stdin_file: Option<String>,
+    pub stdout_file: Option<String>,
+    pub stderr_file: Option<String>,
     pub cmd: String,
     tx: Arc<Mutex<mpsc::Sender<ProcessStatus>>>,
     rx: Arc<Mutex<mpsc::Receiver<ProcessStatus>>>,
@@ -34,9 +36,9 @@ impl Process {
             pid: -1,
             time_limit: -1,
             memory_limit: -1,
-            stdin_fd: -1,
-            stdout_fd: -1,
-            stderr_fd: -1,
+            stdin_file: None,
+            stdout_file: None,
+            stderr_file: None,
             cmd: "".to_string(),
             workdir: PathBuf::from(""),
             tx: Arc::new(Mutex::new(tx)),
@@ -67,7 +69,7 @@ impl Future for Process {
                     run(process_clone);
                 } else if pid > 0 {
                     tx.send(pid).unwrap();
-                    let status = wait(pid);
+                    let status = wait(pid, process_clone.workdir);
                     let status_tx = process_clone.tx.lock().unwrap();
                     status_tx.send(status).unwrap();
                     waker.wake();
@@ -167,20 +169,62 @@ impl ExecArgs {
     }
 }
 
+impl Drop for ExecArgs {
+    fn drop(&mut self) {
+        // TODO: 将不安全的指针类型转换回内置类型，以便由 Rust 自动回收资源
+        println!("Dropping!");
+    }
+}
+
 fn run(process: Process) {
     // 子进程里崩溃也无法返回，崩溃就直接崩溃了
     let exec_args = ExecArgs::build(&process.cmd).unwrap();
     // 修改工作目录
     env::set_current_dir(process.workdir).unwrap();
-    println!("{}", process.cmd);
     unsafe {
         // TODO: 资源限制等
+        // 重定向文件描述符
+        if let Some(file) = process.stdin_file {
+            dup(&file, libc::STDIN_FILENO, libc::O_RDONLY, 0o644)
+        }
+        if let Some(file) = process.stdout_file {
+            dup(
+                &file,
+                libc::STDOUT_FILENO,
+                libc::O_CREAT | libc::O_RDWR,
+                0o644,
+            )
+        }
+        if let Some(file) = process.stderr_file {
+            dup(
+                &file,
+                libc::STDERR_FILENO,
+                libc::O_CREAT | libc::O_RDWR,
+                0o644,
+            )
+        }
         libc::execve(exec_args.pathname, exec_args.argv, exec_args.envp);
     }
     panic!("How dare you!");
 }
 
-fn wait(pid: i32) -> ProcessStatus {
+unsafe fn dup(filename: &str, to: libc::c_int, flag: libc::c_int, mode: libc::c_int) {
+    let filename_str = CString::new(filename).unwrap();
+    let filename = filename_str.as_ptr();
+    let fd = libc::open(filename, flag, mode);
+    if fd < 0 {
+        let err = io::Error::last_os_error().raw_os_error();
+        eprintln!("open failure!");
+        panic!(errno_str(err));
+    }
+    if libc::dup2(fd, to) < 0 {
+        let err = io::Error::last_os_error().raw_os_error();
+        eprintln!("dup2 failure!");
+        panic!(errno_str(err));
+    }
+}
+
+fn wait(pid: i32, workdir: PathBuf) -> ProcessStatus {
     let start = SystemTime::now();
     let mut status = 0;
     let mut rusage = libc::rusage {
@@ -233,12 +277,22 @@ fn wait(pid: i32) -> ProcessStatus {
         // How dare you!
         Err(_) => panic!("How dare you!"),
     };
+    let stdout = match fs::read_to_string(workdir.join("stdout.txt")) {
+        Ok(val) => val,
+        Err(_) => panic!("How dare you!"),
+    };
+    let stderr = match fs::read_to_string(workdir.join("stderr.txt")) {
+        Ok(val) => val,
+        Err(_) => panic!("How dare you!"),
+    };
     return ProcessStatus {
         rusage: rusage,
         exit_code: exit_code,
         status: status,
         signal: signal,
         real_time_used: real_time_used,
+        stdout: stdout,
+        stderr: stderr,
     };
 }
 
@@ -249,4 +303,6 @@ pub struct ProcessStatus {
     pub status: i32,
     pub signal: i32,
     pub real_time_used: u128,
+    pub stdout: String,
+    pub stderr: String,
 }

@@ -47,7 +47,6 @@ impl River for RiverService {
                 },
             };
 
-            println!("{:?}", pwd);
             while let Some(req) = stream.next().await {
                 let req = req?;
 
@@ -84,10 +83,11 @@ impl River for RiverService {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = "127.0.0.1:4003".parse()?;
-    let greeter = RiverService::default();
+    let river = RiverService::default();
 
     Server::builder()
-        .add_service(RiverServer::new(greeter))
+        .concurrency_limit_per_connection(5)
+        .add_service(RiverServer::new(river))
         .serve(addr)
         .await?;
 

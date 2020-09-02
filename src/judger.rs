@@ -25,6 +25,7 @@ impl JudgeResponse {
 pub async fn judger(request: &JudgeRequest) -> Result<JudgeResponse> {
     let mut resp = JudgeResponse::new();
     resp.time_used = request.time_limit;
+    resp.status = JudgeStatus::Ended as i32;
     return Ok(resp);
 }
 
@@ -52,6 +53,7 @@ pub async fn compile(request: &JudgeRequest, path: &Path) -> Result<JudgeRespons
         Some(Language::Python) => "/usr/bin/python3 -m compileall main.py",
         Some(Language::Rust) => "rustc main.rs",
         // 无需编译的语言直接返回
+        // TODO: eslint......
         Some(Language::Node) => return Ok(resp),
         Some(Language::TypeScript) => "tsc",
         Some(Language::Go) => "main.go",
@@ -61,9 +63,14 @@ pub async fn compile(request: &JudgeRequest, path: &Path) -> Result<JudgeRespons
     process.workdir = path.to_path_buf();
     process.time_limit = request.time_limit;
     process.memory_limit = request.memory_limit;
+    process.stdout_file = Some("stdout.txt".to_string());
+    process.stderr_file = Some("stderr.txt".to_string());
 
     let status = process.await?;
     if status.exit_code != 0 {
+        resp.exit_code = status.exit_code;
+        resp.stdout = status.stdout;
+        resp.stderr = status.stderr;
         resp.result = JudgeResult::CompileError as i32;
         resp.status = JudgeStatus::Ended as i32;
     }

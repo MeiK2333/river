@@ -18,7 +18,7 @@ pub enum Error {
 
 pub type Result<T> = result::Result<T, Error>;
 
-pub fn _errno_str(errno: Option<i32>) -> String {
+pub fn errno_str(errno: Option<i32>) -> String {
     match errno {
         Some(no) => {
             let stre = unsafe { strerror(no) };
