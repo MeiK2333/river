@@ -252,8 +252,11 @@ fn wait(pid: i32, workdir: PathBuf) -> ProcessStatus {
         ru_nivcsw: 0 as libc::c_long,
     };
     unsafe {
-        libc::waitpid(pid, &mut status, 0);
-        libc::getrusage(pid, &mut rusage);
+        let val = libc::wait4(pid, &mut status, 0, &mut rusage);
+        if val < 0 {
+            eprintln!("{:?}", io::Error::last_os_error().raw_os_error());
+            panic!("How dare you!");
+        }
     }
 
     let mut exit_code = 0;
@@ -270,6 +273,12 @@ fn wait(pid: i32, workdir: PathBuf) -> ProcessStatus {
             0
         }
     };
+    // TODO: 添加 CGroup 的量度
+    let time_used = rusage.ru_utime.tv_sec * 1000
+        + i64::from(rusage.ru_utime.tv_usec) / 1000
+        + rusage.ru_stime.tv_sec * 1000
+        + i64::from(rusage.ru_stime.tv_usec) / 1000;
+    let memory_used = rusage.ru_maxrss;
     let real_time_used = match start.elapsed() {
         Ok(elapsed) => elapsed.as_millis(),
         // 这种地方如果出错了，确实没有办法解决
@@ -290,6 +299,8 @@ fn wait(pid: i32, workdir: PathBuf) -> ProcessStatus {
         exit_code: exit_code,
         status: status,
         signal: signal,
+        time_used: time_used,
+        memory_used: memory_used,
         real_time_used: real_time_used,
         stdout: stdout,
         stderr: stderr,
@@ -302,6 +313,8 @@ pub struct ProcessStatus {
     pub exit_code: i32,
     pub status: i32,
     pub signal: i32,
+    pub time_used: i64,
+    pub memory_used: i64,
     pub real_time_used: u128,
     pub stdout: String,
     pub stderr: String,

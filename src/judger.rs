@@ -1,5 +1,5 @@
 use super::error::{Error, Result};
-use super::process::Process;
+use super::process::{Process, ProcessStatus};
 use crate::river::judge_request::Language;
 use crate::river::judge_response::{JudgeResult, JudgeStatus};
 use crate::river::{JudgeRequest, JudgeResponse};
@@ -20,11 +20,21 @@ impl JudgeResponse {
             status: JudgeStatus::Running as i32,
         }
     }
+
+    fn set_process_status(self: &mut Self, status: &ProcessStatus) {
+        self.time_used = status.time_used;
+        self.memory_used = status.memory_used;
+        self.exit_code = status.exit_code;
+        self.errno = status.signal;
+        self.stdout = status.stdout.clone();
+        self.stderr = status.stderr.clone();
+    }
 }
 
 pub async fn judger(request: &JudgeRequest) -> Result<JudgeResponse> {
+    // TODO
     let mut resp = JudgeResponse::new();
-    resp.time_used = request.time_limit;
+    resp.time_used = request.time_limit.into();
     resp.status = JudgeStatus::Ended as i32;
     return Ok(resp);
 }
@@ -68,9 +78,7 @@ pub async fn compile(request: &JudgeRequest, path: &Path) -> Result<JudgeRespons
 
     let status = process.await?;
     if status.exit_code != 0 {
-        resp.exit_code = status.exit_code;
-        resp.stdout = status.stdout;
-        resp.stderr = status.stderr;
+        resp.set_process_status(&status);
         resp.result = JudgeResult::CompileError as i32;
         resp.status = JudgeStatus::Ended as i32;
     }
@@ -78,43 +86,18 @@ pub async fn compile(request: &JudgeRequest, path: &Path) -> Result<JudgeRespons
 }
 
 pub fn pending() -> JudgeResponse {
-    JudgeResponse {
-        time_used: 0,
-        memory_used: 0,
-        result: JudgeResult::Accepted as i32,
-        errno: 0,
-        exit_code: 0,
-        stdout: "".into(),
-        stderr: "".into(),
-        errmsg: "".into(),
-        status: JudgeStatus::Pending as i32,
-    }
+    let mut resp = JudgeResponse::new();
+    resp.status = JudgeStatus::Pending as i32;
+    resp
 }
 
 pub fn running() -> JudgeResponse {
-    JudgeResponse {
-        time_used: 0,
-        memory_used: 0,
-        result: JudgeResult::Accepted as i32,
-        errno: 0,
-        exit_code: 0,
-        stdout: "".into(),
-        stderr: "".into(),
-        errmsg: "".into(),
-        status: JudgeStatus::Running as i32,
-    }
+    let resp = JudgeResponse::new();
+    resp
 }
 
 pub fn compiling() -> JudgeResponse {
-    JudgeResponse {
-        time_used: 0,
-        memory_used: 0,
-        result: JudgeResult::Accepted as i32,
-        errno: 0,
-        exit_code: 0,
-        stdout: "".into(),
-        stderr: "".into(),
-        errmsg: "".into(),
-        status: JudgeStatus::Compiling as i32,
-    }
+    let mut resp = JudgeResponse::new();
+    resp.status = JudgeStatus::Compiling as i32;
+    resp
 }
