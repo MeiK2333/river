@@ -168,8 +168,22 @@ impl ExecArgs {
 impl Drop for ExecArgs {
     fn drop(&mut self) {
         // TODO: 将不安全的指针类型转换回内置类型，以便由 Rust 自动回收资源
+        // TODO: 优先级较低，因为目前只在子进程里进行这个操作，且操作后会很快 exec，操作系统会回收这些内存
         println!("Dropping!");
     }
+}
+
+const ITIMER_REAL: libc::c_int = 0;
+extern "C" {
+    #[cfg_attr(
+        all(target_os = "macos", target_arch = "x86"),
+        link_name = "setitimer$UNIX2003"
+    )]
+    fn setitimer(
+        which: libc::c_int,
+        new_value: *const libc::itimerval,
+        old_value: *mut libc::itimerval,
+    ) -> libc::c_int;
 }
 
 fn run(process: Process) {
@@ -177,8 +191,22 @@ fn run(process: Process) {
     let exec_args = ExecArgs::build(&process.cmd).unwrap();
     // 修改工作目录
     env::set_current_dir(process.workdir).unwrap();
+    let mut rl = libc::rlimit {
+        rlim_cur: 0,
+        rlim_max: 0,
+    };
+    // 实际运行时间限制设置为 CPU 时间 + 2 * 2，尽量在防止恶意代码占用评测资源的情况下给正常用户的代码最宽松的环境
+    let rt = libc::itimerval {
+        it_interval: libc::timeval {
+            tv_sec: 0,
+            tv_usec: 0,
+        },
+        it_value: libc::timeval {
+            tv_sec: i64::from(process.time_limit / 1000 + 2) * 2,
+            tv_usec: 0,
+        },
+    };
     unsafe {
-        // TODO: 资源限制等
         // 重定向文件描述符
         if let Some(file) = process.stdin_file {
             let filename = file.to_str().unwrap();
@@ -196,6 +224,33 @@ fn run(process: Process) {
             libc::O_CREAT | libc::O_RDWR,
             0o644,
         );
+        // 墙上时钟限制
+        if setitimer(ITIMER_REAL, &rt, ptr::null_mut()) == -1 {
+            eprintln!("setitimer failure!");
+            eprintln!("{:?}", io::Error::last_os_error().raw_os_error());
+            panic!("How dare you!");
+        }
+        // CPU 时间限制，粒度为 S
+        rl.rlim_cur = (process.time_limit / 1000 + 1) as u64;
+        rl.rlim_max = rl.rlim_cur + 1;
+        if libc::setrlimit(libc::RLIMIT_CPU, &rl) != 0 {
+            eprintln!("setrlimit failure!");
+            eprintln!("{:?}", io::Error::last_os_error().raw_os_error());
+            panic!("How dare you!");
+        }
+        // 设置内存限制
+        rl.rlim_cur = (process.memory_limit * 1024) as u64;
+        rl.rlim_max = rl.rlim_cur + 1024;
+        if libc::setrlimit(libc::RLIMIT_DATA, &rl) != 0 {
+            eprintln!("setrlimit failure!");
+            eprintln!("{:?}", io::Error::last_os_error().raw_os_error());
+            panic!("How dare you!");
+        }
+        if libc::setrlimit(libc::RLIMIT_AS, &rl) != 0 {
+            eprintln!("setrlimit failure!");
+            eprintln!("{:?}", io::Error::last_os_error().raw_os_error());
+            panic!("How dare you!");
+        }
         libc::execve(exec_args.pathname, exec_args.argv, exec_args.envp);
     }
     panic!("How dare you!");
@@ -208,11 +263,13 @@ unsafe fn dup(filename: &str, to: libc::c_int, flag: libc::c_int, mode: libc::c_
     if fd < 0 {
         let err = io::Error::last_os_error().raw_os_error();
         eprintln!("open failure!");
+        eprintln!("{:?}", io::Error::last_os_error().raw_os_error());
         panic!(errno_str(err));
     }
     if libc::dup2(fd, to) < 0 {
         let err = io::Error::last_os_error().raw_os_error();
         eprintln!("dup2 failure!");
+        eprintln!("{:?}", io::Error::last_os_error().raw_os_error());
         panic!(errno_str(err));
     }
 }

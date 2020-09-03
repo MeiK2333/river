@@ -55,10 +55,11 @@ pub async fn judger(request: &JudgeRequest, path: &Path) -> Result<JudgeResponse
     }
 
     resp.status = JudgeStatus::Ended as i32;
+    // TODO: 根据返回值等判断 tle、mle、re 等状态
     // TODO: 对比答案，检查结果
     if status.exit_code != 0 {
         resp.set_process_status(&status);
-        resp.result = JudgeResult::CompileError as i32;
+        resp.result = JudgeResult::WrongAnswer as i32;
         resp.status = JudgeStatus::Ended as i32;
     }
     Ok(resp)
@@ -96,8 +97,9 @@ pub async fn compile(request: &JudgeRequest, path: &Path) -> Result<JudgeRespons
     };
     process.cmd = cmd.to_string();
     process.workdir = path.to_path_buf();
-    process.time_limit = request.time_limit;
-    process.memory_limit = request.memory_limit;
+    // 编译的资源限制为固定的
+    process.time_limit = 10000;
+    process.memory_limit = 64 * 1024;
 
     let status = process.await?;
     if status.exit_code != 0 {
