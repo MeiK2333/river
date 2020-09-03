@@ -21,9 +21,7 @@ pub struct Process {
     pub workdir: PathBuf,
     pub time_limit: i32,
     pub memory_limit: i32,
-    pub stdin_file: Option<String>,
-    pub stdout_file: Option<String>,
-    pub stderr_file: Option<String>,
+    pub stdin_file: Option<PathBuf>,
     pub cmd: String,
     tx: Arc<Mutex<mpsc::Sender<ProcessStatus>>>,
     rx: Arc<Mutex<mpsc::Receiver<ProcessStatus>>>,
@@ -37,8 +35,6 @@ impl Process {
             time_limit: -1,
             memory_limit: -1,
             stdin_file: None,
-            stdout_file: None,
-            stderr_file: None,
             cmd: "".to_string(),
             workdir: PathBuf::from(""),
             tx: Arc::new(Mutex::new(tx)),
@@ -185,24 +181,21 @@ fn run(process: Process) {
         // TODO: 资源限制等
         // 重定向文件描述符
         if let Some(file) = process.stdin_file {
-            dup(&file, libc::STDIN_FILENO, libc::O_RDONLY, 0o644)
+            let filename = file.to_str().unwrap();
+            dup(&filename, libc::STDIN_FILENO, libc::O_RDONLY, 0o644)
         }
-        if let Some(file) = process.stdout_file {
-            dup(
-                &file,
-                libc::STDOUT_FILENO,
-                libc::O_CREAT | libc::O_RDWR,
-                0o644,
-            )
-        }
-        if let Some(file) = process.stderr_file {
-            dup(
-                &file,
-                libc::STDERR_FILENO,
-                libc::O_CREAT | libc::O_RDWR,
-                0o644,
-            )
-        }
+        dup(
+            "stdout.txt",
+            libc::STDOUT_FILENO,
+            libc::O_CREAT | libc::O_RDWR,
+            0o644,
+        );
+        dup(
+            "stderr.txt",
+            libc::STDERR_FILENO,
+            libc::O_CREAT | libc::O_RDWR,
+            0o644,
+        );
         libc::execve(exec_args.pathname, exec_args.argv, exec_args.envp);
     }
     panic!("How dare you!");
@@ -290,10 +283,16 @@ fn wait(pid: i32, workdir: PathBuf) -> ProcessStatus {
         Ok(val) => val,
         Err(_) => panic!("How dare you!"),
     };
+    if let Err(_) = fs::remove_file(workdir.join("stdout.txt")) {
+        panic!("How dare you!");
+    }
     let stderr = match fs::read_to_string(workdir.join("stderr.txt")) {
         Ok(val) => val,
         Err(_) => panic!("How dare you!"),
     };
+    if let Err(_) = fs::remove_file(workdir.join("stderr.txt")) {
+        panic!("How dare you!");
+    }
     return ProcessStatus {
         rusage: rusage,
         exit_code: exit_code,

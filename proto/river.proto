@@ -47,10 +47,10 @@ message JudgeResponse {
     SystemError = 8;
   }
   JudgeResult result = 3;
-  int32 errno = 4;
-  int32 exit_code = 5;
-  string stdout = 6;
-  string stderr = 7;
+  // int32 errno = 4;
+  // int32 exit_code = 5;
+  // string stdout = 6;
+  // string stderr = 7;
   string errmsg = 8;
   enum JudgeStatus {
     Pending = 0;

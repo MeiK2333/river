@@ -66,7 +66,7 @@ impl River for RiverService {
                 need_compile = false;
 
                 yield judger::running();
-                let result = match judger::judger(&req).await {
+                let result = match judger::judger(&req, &pwd.path()).await {
                     Ok(res) => res,
                     Err(e) => error::system_error(e)
                 };

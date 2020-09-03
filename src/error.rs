@@ -4,6 +4,7 @@ use libc::strerror;
 use std::ffi::{CStr, NulError, OsString};
 use std::fmt;
 use std::io;
+use std::path::PathBuf;
 use std::result;
 
 #[derive(Debug)]
@@ -14,6 +15,7 @@ pub enum Error {
     ChannelRecvError,
     StringToCStringError(NulError),
     OsStringToStringError(OsString),
+    RemoveFileError(PathBuf),
 }
 
 pub type Result<T> = result::Result<T, Error>;
@@ -42,10 +44,6 @@ pub fn system_error(err: Error) -> JudgeResponse {
         time_used: 0,
         memory_used: 0,
         result: JudgeResult::SystemError as i32,
-        errno: 0,
-        exit_code: 0,
-        stdout: "".into(),
-        stderr: "".into(),
         errmsg: format!("{}", err).into(),
         status: JudgeStatus::Ended as i32,
     }
