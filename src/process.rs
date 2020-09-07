@@ -173,19 +173,6 @@ impl Drop for ExecArgs {
     }
 }
 
-const ITIMER_REAL: libc::c_int = 0;
-extern "C" {
-    #[cfg_attr(
-        all(target_os = "macos", target_arch = "x86"),
-        link_name = "setitimer$UNIX2003"
-    )]
-    fn setitimer(
-        which: libc::c_int,
-        new_value: *const libc::itimerval,
-        old_value: *mut libc::itimerval,
-    ) -> libc::c_int;
-}
-
 fn run(process: Process) {
     // 子进程里崩溃也无法返回，崩溃就直接崩溃了
     let exec_args = ExecArgs::build(&process.cmd).unwrap();
@@ -225,7 +212,7 @@ fn run(process: Process) {
             0o644,
         );
         // 墙上时钟限制
-        if setitimer(ITIMER_REAL, &rt, ptr::null_mut()) == -1 {
+        if libc::setitimer(libc::ITIMER_REAL, &rt, ptr::null_mut()) == -1 {
             eprintln!("setitimer failure!");
             eprintln!("{:?}", io::Error::last_os_error().raw_os_error());
             panic!("How dare you!");

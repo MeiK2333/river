@@ -25,8 +25,8 @@ message JudgeRequest {
   }
   JudgeType judge_type = 3;
 
-  string in_data = 4;
-  string out_data = 5;
+  bytes in_data = 4;
+  bytes out_data = 5;
 
   int32 time_limit = 6;
   int32 memory_limit = 7;
