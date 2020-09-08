@@ -17,6 +17,7 @@ pub enum Error {
     OsStringToStringError(OsString),
     RemoveFileError(PathBuf),
     UnknownRequestData,
+    RequestDataNotFound,
 }
 
 pub type Result<T> = result::Result<T, Error>;

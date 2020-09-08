@@ -68,6 +68,7 @@ pub async fn judger(request: &JudgeRequest, data: &JudgeData, path: &Path) -> Re
 
 pub async fn compile(request: &JudgeRequest, data: &CompileData, path: &Path) -> Result<JudgeResponse> {
     let mut resp = JudgeResponse::new();
+    resp.status = JudgeStatus::Ended as i32;
     // 写入代码
     let filename = match Language::from_i32(request.language) {
         Some(Language::C) => "main.c",
@@ -105,9 +106,8 @@ pub async fn compile(request: &JudgeRequest, data: &CompileData, path: &Path) ->
     let status = process.await?;
     if status.exit_code != 0 {
         resp.set_process_status(&status);
-        resp.errmsg = status.stdout;
+        resp.errmsg = format!("{}{}", status.stdout, status.stderr);
         resp.result = JudgeResult::CompileError as i32;
-        resp.status = JudgeStatus::Ended as i32;
     }
     Ok(resp)
 }

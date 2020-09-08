@@ -54,6 +54,7 @@ impl River for RiverService {
                 let result = match &req.data {
                     Some(Data::CompileData(data)) => judger::compile(&req, &data, &pwd.path()).await,
                     Some(Data::JudgeData(data)) => judger::judger(&req, &data, &pwd.path()).await,
+                    None => Err(error::Error::RequestDataNotFound),
                     _ => Err(error::Error::UnknownRequestData),
                 };
                 let result = match result {

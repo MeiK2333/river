@@ -44,6 +44,48 @@ impl Process {
     pub fn set_pid(&mut self, pid: i32) {
         self.pid = pid;
     }
+
+    #[allow(dead_code)]
+    #[allow(unused_variables)]
+    // 为进程设置 stdin 的数据
+    pub fn set_stdin(in_data: &Vec<u8>) {
+        // TODO
+    }
+
+    #[allow(dead_code)]
+    #[allow(unused_variables)]
+    // 从 stdout 中读取指定长度的内容
+    pub fn read_stdout(len: i32) {
+        // TODO
+    }
+
+    #[allow(dead_code)]
+    #[allow(unused_variables)]
+    // 从 stderr 中读取指定长度的内容
+    pub fn read_stderr(len: i32) {
+        // TODO
+    }
+}
+
+impl Drop for Process {
+    fn drop(&mut self) {
+        if self.pid > 0 {
+            let mut status = 0;
+            let pid;
+            unsafe {
+                pid = libc::waitpid(self.pid, &mut status, libc::WNOHANG);
+            }
+            // > 0: 对应子进程退出
+            // = 0: 对应子进程存在但未退出
+            // 如果在运行过程中上层异常中断，则需要 kill 子进程并回收资源
+            if pid >= 0 {
+                unsafe {
+                    libc::kill(self.pid, 9);
+                    libc::waitpid(self.pid, &mut status, 0);
+                }
+            }
+        }
+    }
 }
 
 impl Future for Process {
@@ -65,7 +107,7 @@ impl Future for Process {
                     run(process_clone);
                 } else if pid > 0 {
                     tx.send(pid).unwrap();
-                    let status = wait(pid, process_clone.workdir);
+                    let status = wait(pid, &process_clone.workdir);
                     let status_tx = process_clone.tx.lock().unwrap();
                     status_tx.send(status).unwrap();
                     waker.wake();
@@ -190,7 +232,7 @@ fn run(process: Process) {
     // 子进程里崩溃也无法返回，崩溃就直接崩溃了
     let exec_args = ExecArgs::build(&process.cmd).unwrap();
     // 修改工作目录
-    env::set_current_dir(process.workdir).unwrap();
+    env::set_current_dir(&process.workdir).unwrap();
     let mut rl = libc::rlimit {
         rlim_cur: 0,
         rlim_max: 0,
@@ -208,7 +250,7 @@ fn run(process: Process) {
     };
     unsafe {
         // 重定向文件描述符
-        if let Some(file) = process.stdin_file {
+        if let Some(file) = &process.stdin_file {
             let filename = file.to_str().unwrap();
             dup(&filename, libc::STDIN_FILENO, libc::O_RDONLY, 0o644)
         }
@@ -274,7 +316,7 @@ unsafe fn dup(filename: &str, to: libc::c_int, flag: libc::c_int, mode: libc::c_
     }
 }
 
-fn wait(pid: i32, workdir: PathBuf) -> ProcessStatus {
+fn wait(pid: i32, workdir: &PathBuf) -> ProcessStatus {
     let start = SystemTime::now();
     let mut status = 0;
     let mut rusage = libc::rusage {
