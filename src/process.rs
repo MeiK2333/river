@@ -96,7 +96,7 @@ impl Future for Process {
         // 如果 pid == -1，则说明子进程还没有运行，开始进程
         if process.pid == -1 {
             let (tx, rx) = mpsc::channel();
-            let process_clone = process.clone();
+            let mut process_clone = process.clone();
             let waker = cx.waker().clone();
             thread::spawn(move || {
                 let pid;
@@ -104,10 +104,11 @@ impl Future for Process {
                     pid = libc::fork();
                 }
                 if pid == 0 {
-                    run(process_clone);
+                    process_clone.run();
                 } else if pid > 0 {
                     tx.send(pid).unwrap();
-                    let status = wait(pid, &process_clone.workdir);
+                    process_clone.set_pid(pid);
+                    let status = process_clone.wait();
                     let status_tx = process_clone.tx.lock().unwrap();
                     status_tx.send(status).unwrap();
                     waker.wake();
@@ -228,74 +229,76 @@ extern "C" {
     ) -> libc::c_int;
 }
 
-fn run(process: Process) {
-    // 子进程里崩溃也无法返回，崩溃就直接崩溃了
-    let exec_args = ExecArgs::build(&process.cmd).unwrap();
-    // 修改工作目录
-    env::set_current_dir(&process.workdir).unwrap();
-    let mut rl = libc::rlimit {
-        rlim_cur: 0,
-        rlim_max: 0,
-    };
-    // 实际运行时间限制设置为 CPU 时间 + 2 * 2，尽量在防止恶意代码占用评测资源的情况下给正常用户的代码最宽松的环境
-    let rt = libc::itimerval {
-        it_interval: libc::timeval {
-            tv_sec: 0,
-            tv_usec: 0,
-        },
-        it_value: libc::timeval {
-            tv_sec: i64::from(process.time_limit / 1000 + 2) * 2,
-            tv_usec: 0,
-        },
-    };
-    unsafe {
-        // 重定向文件描述符
-        if let Some(file) = &process.stdin_file {
-            let filename = file.to_str().unwrap();
-            dup(&filename, libc::STDIN_FILENO, libc::O_RDONLY, 0o644)
+impl Process {
+    fn run(&self) {
+        // 子进程里崩溃也无法返回，崩溃就直接崩溃了
+        let exec_args = ExecArgs::build(&self.cmd).unwrap();
+        // 修改工作目录
+        env::set_current_dir(&self.workdir).unwrap();
+        let mut rl = libc::rlimit {
+            rlim_cur: 0,
+            rlim_max: 0,
+        };
+        // 实际运行时间限制设置为 CPU 时间 + 2 * 2，尽量在防止恶意代码占用评测资源的情况下给正常用户的代码最宽松的环境
+        let rt = libc::itimerval {
+            it_interval: libc::timeval {
+                tv_sec: 0,
+                tv_usec: 0,
+            },
+            it_value: libc::timeval {
+                tv_sec: i64::from(self.time_limit / 1000 + 2) * 2,
+                tv_usec: 0,
+            },
+        };
+        unsafe {
+            // 重定向文件描述符
+            if let Some(file) = &self.stdin_file {
+                let filename = file.to_str().unwrap();
+                dup(&filename, libc::STDIN_FILENO, libc::O_RDONLY, 0o644)
+            }
+            dup(
+                "stdout.txt",
+                libc::STDOUT_FILENO,
+                libc::O_CREAT | libc::O_RDWR,
+                0o644,
+            );
+            dup(
+                "stderr.txt",
+                libc::STDERR_FILENO,
+                libc::O_CREAT | libc::O_RDWR,
+                0o644,
+            );
+            // 墙上时钟限制
+            if setitimer(ITIMER_REAL, &rt, ptr::null_mut()) == -1 {
+                eprintln!("setitimer failure!");
+                eprintln!("{:?}", io::Error::last_os_error().raw_os_error());
+                panic!("How dare you!");
+            }
+            // CPU 时间限制，粒度为 S
+            rl.rlim_cur = (self.time_limit / 1000 + 1) as u64;
+            rl.rlim_max = rl.rlim_cur + 1;
+            if libc::setrlimit(libc::RLIMIT_CPU, &rl) != 0 {
+                eprintln!("setrlimit failure!");
+                eprintln!("{:?}", io::Error::last_os_error().raw_os_error());
+                panic!("How dare you!");
+            }
+            // 设置内存限制
+            rl.rlim_cur = (self.memory_limit * 1024) as u64;
+            rl.rlim_max = rl.rlim_cur + 1024;
+            if libc::setrlimit(libc::RLIMIT_DATA, &rl) != 0 {
+                eprintln!("setrlimit failure!");
+                eprintln!("{:?}", io::Error::last_os_error().raw_os_error());
+                panic!("How dare you!");
+            }
+            if libc::setrlimit(libc::RLIMIT_AS, &rl) != 0 {
+                eprintln!("setrlimit failure!");
+                eprintln!("{:?}", io::Error::last_os_error().raw_os_error());
+                panic!("How dare you!");
+            }
+            libc::execve(exec_args.pathname, exec_args.argv, exec_args.envp);
         }
-        dup(
-            "stdout.txt",
-            libc::STDOUT_FILENO,
-            libc::O_CREAT | libc::O_RDWR,
-            0o644,
-        );
-        dup(
-            "stderr.txt",
-            libc::STDERR_FILENO,
-            libc::O_CREAT | libc::O_RDWR,
-            0o644,
-        );
-        // 墙上时钟限制
-        if setitimer(ITIMER_REAL, &rt, ptr::null_mut()) == -1 {
-            eprintln!("setitimer failure!");
-            eprintln!("{:?}", io::Error::last_os_error().raw_os_error());
-            panic!("How dare you!");
-        }
-        // CPU 时间限制，粒度为 S
-        rl.rlim_cur = (process.time_limit / 1000 + 1) as u64;
-        rl.rlim_max = rl.rlim_cur + 1;
-        if libc::setrlimit(libc::RLIMIT_CPU, &rl) != 0 {
-            eprintln!("setrlimit failure!");
-            eprintln!("{:?}", io::Error::last_os_error().raw_os_error());
-            panic!("How dare you!");
-        }
-        // 设置内存限制
-        rl.rlim_cur = (process.memory_limit * 1024) as u64;
-        rl.rlim_max = rl.rlim_cur + 1024;
-        if libc::setrlimit(libc::RLIMIT_DATA, &rl) != 0 {
-            eprintln!("setrlimit failure!");
-            eprintln!("{:?}", io::Error::last_os_error().raw_os_error());
-            panic!("How dare you!");
-        }
-        if libc::setrlimit(libc::RLIMIT_AS, &rl) != 0 {
-            eprintln!("setrlimit failure!");
-            eprintln!("{:?}", io::Error::last_os_error().raw_os_error());
-            panic!("How dare you!");
-        }
-        libc::execve(exec_args.pathname, exec_args.argv, exec_args.envp);
+        panic!("How dare you!");
     }
-    panic!("How dare you!");
 }
 
 unsafe fn dup(filename: &str, to: libc::c_int, flag: libc::c_int, mode: libc::c_int) {
@@ -316,93 +319,96 @@ unsafe fn dup(filename: &str, to: libc::c_int, flag: libc::c_int, mode: libc::c_
     }
 }
 
-fn wait(pid: i32, workdir: &PathBuf) -> ProcessStatus {
-    let start = SystemTime::now();
-    let mut status = 0;
-    let mut rusage = libc::rusage {
-        ru_utime: libc::timeval {
-            tv_sec: 0 as libc::time_t,
-            tv_usec: 0 as libc::suseconds_t,
-        },
-        ru_stime: libc::timeval {
-            tv_sec: 0 as libc::time_t,
-            tv_usec: 0 as libc::suseconds_t,
-        },
-        ru_maxrss: 0 as libc::c_long,
-        ru_ixrss: 0 as libc::c_long,
-        ru_idrss: 0 as libc::c_long,
-        ru_isrss: 0 as libc::c_long,
-        ru_minflt: 0 as libc::c_long,
-        ru_majflt: 0 as libc::c_long,
-        ru_nswap: 0 as libc::c_long,
-        ru_inblock: 0 as libc::c_long,
-        ru_oublock: 0 as libc::c_long,
-        ru_msgsnd: 0 as libc::c_long,
-        ru_msgrcv: 0 as libc::c_long,
-        ru_nsignals: 0 as libc::c_long,
-        ru_nvcsw: 0 as libc::c_long,
-        ru_nivcsw: 0 as libc::c_long,
-    };
-    unsafe {
-        let val = libc::wait4(pid, &mut status, 0, &mut rusage);
-        if val < 0 {
-            eprintln!("{:?}", io::Error::last_os_error().raw_os_error());
+impl Process {
+    fn wait(&self) -> ProcessStatus {
+        let pid = self.pid;
+        let start = SystemTime::now();
+        let mut status = 0;
+        let mut rusage = libc::rusage {
+            ru_utime: libc::timeval {
+                tv_sec: 0 as libc::time_t,
+                tv_usec: 0 as libc::suseconds_t,
+            },
+            ru_stime: libc::timeval {
+                tv_sec: 0 as libc::time_t,
+                tv_usec: 0 as libc::suseconds_t,
+            },
+            ru_maxrss: 0 as libc::c_long,
+            ru_ixrss: 0 as libc::c_long,
+            ru_idrss: 0 as libc::c_long,
+            ru_isrss: 0 as libc::c_long,
+            ru_minflt: 0 as libc::c_long,
+            ru_majflt: 0 as libc::c_long,
+            ru_nswap: 0 as libc::c_long,
+            ru_inblock: 0 as libc::c_long,
+            ru_oublock: 0 as libc::c_long,
+            ru_msgsnd: 0 as libc::c_long,
+            ru_msgrcv: 0 as libc::c_long,
+            ru_nsignals: 0 as libc::c_long,
+            ru_nvcsw: 0 as libc::c_long,
+            ru_nivcsw: 0 as libc::c_long,
+        };
+        unsafe {
+            let val = libc::wait4(pid, &mut status, 0, &mut rusage);
+            if val < 0 {
+                eprintln!("{:?}", io::Error::last_os_error().raw_os_error());
+                panic!("How dare you!");
+            }
+        }
+
+        let mut exit_code = 0;
+        let exited = unsafe { libc::WIFEXITED(status) };
+        if exited {
+            exit_code = unsafe { libc::WEXITSTATUS(status) };
+        }
+        let signal = unsafe {
+            if libc::WIFSIGNALED(status) {
+                libc::WTERMSIG(status)
+            } else if libc::WIFSTOPPED(status) {
+                libc::WSTOPSIG(status)
+            } else {
+                0
+            }
+        };
+        // TODO: 添加 CGroup 的量度
+        let time_used = rusage.ru_utime.tv_sec * 1000
+            + i64::from(rusage.ru_utime.tv_usec) / 1000
+            + rusage.ru_stime.tv_sec * 1000
+            + i64::from(rusage.ru_stime.tv_usec) / 1000;
+        let memory_used = rusage.ru_maxrss;
+        let real_time_used = match start.elapsed() {
+            Ok(elapsed) => elapsed.as_millis(),
+            // 这种地方如果出错了，确实没有办法解决
+            // 只能崩溃再见了
+            // How dare you!
+            Err(_) => panic!("How dare you!"),
+        };
+        let stdout = match fs::read_to_string(&self.workdir.join("stdout.txt")) {
+            Ok(val) => val,
+            Err(_) => panic!("How dare you!"),
+        };
+        if let Err(_) = fs::remove_file(&self.workdir.join("stdout.txt")) {
             panic!("How dare you!");
         }
-    }
-
-    let mut exit_code = 0;
-    let exited = unsafe { libc::WIFEXITED(status) };
-    if exited {
-        exit_code = unsafe { libc::WEXITSTATUS(status) };
-    }
-    let signal = unsafe {
-        if libc::WIFSIGNALED(status) {
-            libc::WTERMSIG(status)
-        } else if libc::WIFSTOPPED(status) {
-            libc::WSTOPSIG(status)
-        } else {
-            0
+        let stderr = match fs::read_to_string(&self.workdir.join("stderr.txt")) {
+            Ok(val) => val,
+            Err(_) => panic!("How dare you!"),
+        };
+        if let Err(_) = fs::remove_file(&self.workdir.join("stderr.txt")) {
+            panic!("How dare you!");
         }
-    };
-    // TODO: 添加 CGroup 的量度
-    let time_used = rusage.ru_utime.tv_sec * 1000
-        + i64::from(rusage.ru_utime.tv_usec) / 1000
-        + rusage.ru_stime.tv_sec * 1000
-        + i64::from(rusage.ru_stime.tv_usec) / 1000;
-    let memory_used = rusage.ru_maxrss;
-    let real_time_used = match start.elapsed() {
-        Ok(elapsed) => elapsed.as_millis(),
-        // 这种地方如果出错了，确实没有办法解决
-        // 只能崩溃再见了
-        // How dare you!
-        Err(_) => panic!("How dare you!"),
-    };
-    let stdout = match fs::read_to_string(workdir.join("stdout.txt")) {
-        Ok(val) => val,
-        Err(_) => panic!("How dare you!"),
-    };
-    if let Err(_) = fs::remove_file(workdir.join("stdout.txt")) {
-        panic!("How dare you!");
+        return ProcessStatus {
+            rusage: rusage,
+            exit_code: exit_code,
+            status: status,
+            signal: signal,
+            time_used: time_used,
+            memory_used: memory_used,
+            real_time_used: real_time_used,
+            stdout: stdout,
+            stderr: stderr,
+        };
     }
-    let stderr = match fs::read_to_string(workdir.join("stderr.txt")) {
-        Ok(val) => val,
-        Err(_) => panic!("How dare you!"),
-    };
-    if let Err(_) = fs::remove_file(workdir.join("stderr.txt")) {
-        panic!("How dare you!");
-    }
-    return ProcessStatus {
-        rusage: rusage,
-        exit_code: exit_code,
-        status: status,
-        signal: signal,
-        time_used: time_used,
-        memory_used: memory_used,
-        real_time_used: real_time_used,
-        stdout: stdout,
-        stderr: stderr,
-    };
 }
 
 #[derive(Clone)]
