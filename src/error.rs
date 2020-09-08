@@ -1,5 +1,5 @@
-use crate::river::{JudgeResult, JudgeStatus};
 use crate::river::JudgeResponse;
+use crate::river::{JudgeResult, JudgeStatus};
 use libc::strerror;
 use std::ffi::{CStr, NulError, OsString};
 use std::fmt;
@@ -16,8 +16,10 @@ pub enum Error {
     StringToCStringError(NulError),
     OsStringToStringError(OsString),
     RemoveFileError(PathBuf),
+    PathBufToStringError(PathBuf),
     UnknownRequestData,
     RequestDataNotFound,
+    SyscallError(String),
 }
 
 pub type Result<T> = result::Result<T, Error>;
@@ -36,6 +38,11 @@ pub fn errno_str(errno: Option<i32>) -> String {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
+            Error::SyscallError(ref syscall) => {
+                let errno = io::Error::last_os_error().raw_os_error();
+                let reason = errno_str(errno);
+                write!(f, "SyscallError: `{}` {}", syscall, reason)
+            }
             _ => write!(f, "{:?}", self),
         }
     }

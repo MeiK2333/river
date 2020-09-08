@@ -1,11 +1,13 @@
 use super::error::{errno_str, Error, Result};
 use libc;
 use std::env;
+use std::ffi::c_void;
 use std::ffi::CString;
 use std::fs;
 use std::future::Future;
 use std::io;
 use std::mem;
+use std::os::raw::c_char;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::ptr;
@@ -22,40 +24,91 @@ pub struct Process {
     pub time_limit: i32,
     pub memory_limit: i32,
     pub stdin_file: Option<PathBuf>,
+    stdin_fd: Option<i32>,
     pub cmd: String,
     tx: Arc<Mutex<mpsc::Sender<ProcessStatus>>>,
     rx: Arc<Mutex<mpsc::Receiver<ProcessStatus>>>,
 }
 
 impl Process {
-    pub fn new() -> Process {
+    pub fn new(cmd: String, workdir: PathBuf) -> Process {
         let (tx, rx) = mpsc::channel();
         Process {
             pid: -1,
             time_limit: -1,
             memory_limit: -1,
             stdin_file: None,
-            cmd: "".to_string(),
-            workdir: PathBuf::from(""),
+            stdin_fd: None,
+            cmd: cmd,
+            workdir: workdir,
             tx: Arc::new(Mutex::new(tx)),
             rx: Arc::new(Mutex::new(rx)),
         }
     }
-    pub fn set_pid(&mut self, pid: i32) {
+    fn set_pid(&mut self, pid: i32) {
         self.pid = pid;
+    }
+
+    fn workdir_str(&self) -> Result<String> {
+        let file = match self.workdir.file_stem() {
+            Some(stem) => match stem.to_str() {
+                Some(val) => val.to_string(),
+                None => return Err(Error::PathBufToStringError(self.workdir.clone())),
+            },
+            None => return Err(Error::PathBufToStringError(self.workdir.clone())),
+        };
+        Ok(file)
     }
 
     #[allow(dead_code)]
     #[allow(unused_variables)]
     // 为进程设置 stdin 的数据
-    pub fn set_stdin(in_data: &Vec<u8>) {
-        // TODO
+    pub fn set_stdin(&mut self, in_data: &Vec<u8>) -> Result<()> {
+        let memfile = self.workdir_str()?;
+        // 打开内存文件
+        let fd = unsafe {
+            libc::shm_open(
+                CString::new(memfile).unwrap().as_ptr(),
+                libc::O_RDWR | libc::O_CREAT | libc::O_TRUNC,
+                0,
+            )
+        };
+        if fd <= 0 {
+            return Err(Error::SyscallError("shm_open".to_string()));
+        }
+        self.stdin_fd = Some(fd);
+        // 扩充内存到数据文件大小
+        if unsafe { libc::ftruncate(fd, in_data.len() as i64) } < 0 {
+            return Err(Error::SyscallError("ftruncate".to_string()));
+        }
+
+        // 复制数据到创建的内存中
+        unsafe {
+            let ptr = libc::mmap(
+                std::ptr::null_mut() as *mut c_void,
+                in_data.len(),
+                libc::PROT_WRITE,
+                libc::MAP_SHARED,
+                fd,
+                0,
+            );
+            if ptr == libc::MAP_FAILED {
+                return Err(Error::SyscallError("mmap".to_string()));
+            }
+            libc::strcpy(ptr as *mut c_char, in_data.as_ptr() as *const i8);
+            // 复制完要记得 munmap，否则会造成无法回收的内存泄露
+            if libc::munmap(ptr, in_data.len()) < 0 {
+                return Err(Error::SyscallError("munmap".to_string()));
+            }
+        }
+
+        Ok(())
     }
 
     #[allow(dead_code)]
     #[allow(unused_variables)]
     // 从 stdout 中读取指定长度的内容
-    pub fn read_stdout(len: i32) {
+    pub fn read_stdout(&mut self, len: i32) {
         // TODO
     }
 
@@ -82,6 +135,15 @@ impl Drop for Process {
                 unsafe {
                     libc::kill(self.pid, 9);
                     libc::waitpid(self.pid, &mut status, 0);
+                }
+            }
+
+            // 如果设置了 stdin 数据，则需要释放对应的内存
+            if let Some(_) = self.stdin_fd {
+                // 如果 stdin_fd 有值，则说明 pathbuf 的转换一定没问题，否则上面也不会转换成功
+                let memfile = self.workdir.clone().into_os_string().into_string().unwrap();
+                unsafe {
+                    libc::shm_unlink(CString::new(memfile).unwrap().as_ptr());
                 }
             }
         }
@@ -252,9 +314,13 @@ impl Process {
         };
         unsafe {
             // 重定向文件描述符
-            if let Some(file) = &self.stdin_file {
-                let filename = file.to_str().unwrap();
-                dup(&filename, libc::STDIN_FILENO, libc::O_RDONLY, 0o644)
+            if let Some(fd) = self.stdin_fd {
+                if libc::dup2(fd, libc::STDIN_FILENO) < 0 {
+                    let err = io::Error::last_os_error().raw_os_error();
+                    eprintln!("dup2 failure!");
+                    eprintln!("{:?}", io::Error::last_os_error().raw_os_error());
+                    panic!(errno_str(err));
+                }
             }
             dup(
                 "stdout.txt",

@@ -1,7 +1,7 @@
 use super::error::{Error, Result};
 use super::process::{Process, ProcessStatus};
 use crate::river::Language;
-use crate::river::{JudgeResult, JudgeStatus, CompileData, JudgeData};
+use crate::river::{CompileData, JudgeData, JudgeResult, JudgeStatus};
 use crate::river::{JudgeRequest, JudgeResponse};
 use std::path::Path;
 use tokio::fs;
@@ -23,7 +23,11 @@ impl JudgeResponse {
     }
 }
 
-pub async fn judger(request: &JudgeRequest, data: &JudgeData, path: &Path) -> Result<JudgeResponse> {
+pub async fn judger(
+    request: &JudgeRequest,
+    data: &JudgeData,
+    path: &Path,
+) -> Result<JudgeResponse> {
     let mut resp = JudgeResponse::new();
     let cmd = match Language::from_i32(request.language) {
         Some(Language::C) => "./a.out",
@@ -35,11 +39,12 @@ pub async fn judger(request: &JudgeRequest, data: &JudgeData, path: &Path) -> Re
         Some(Language::Go) => "./a.out",
         None => return Err(Error::LanguageNotFound(request.language)),
     };
-    let mut process = Process::new();
-    process.cmd = cmd.to_string();
-    process.workdir = path.to_path_buf();
+    let mut process = Process::new(cmd.to_string(), path.to_path_buf());
     process.time_limit = data.time_limit;
     process.memory_limit = data.memory_limit;
+
+    // 设置输入数据
+    process.set_stdin(&data.in_data)?;
 
     // TODO: 使用内存流替换，尽可能减少文件读写与复制
     // 写入输入文件
@@ -66,7 +71,11 @@ pub async fn judger(request: &JudgeRequest, data: &JudgeData, path: &Path) -> Re
     Ok(resp)
 }
 
-pub async fn compile(request: &JudgeRequest, data: &CompileData, path: &Path) -> Result<JudgeResponse> {
+pub async fn compile(
+    request: &JudgeRequest,
+    data: &CompileData,
+    path: &Path,
+) -> Result<JudgeResponse> {
     let mut resp = JudgeResponse::new();
     resp.status = JudgeStatus::Ended as i32;
     // 写入代码
@@ -84,7 +93,6 @@ pub async fn compile(request: &JudgeRequest, data: &CompileData, path: &Path) ->
         return Err(Error::FileWriteError(e));
     };
 
-    let mut process = Process::new();
     let cmd = match Language::from_i32(request.language) {
         Some(Language::C) => "/usr/bin/gcc main.c -o a.out -Wall -O2 -std=c99 --static",
         Some(Language::Cpp) => "/usr/bin/g++ main.cpp -O2 -Wall --static -o a.out --std=gnu++17",
@@ -97,8 +105,7 @@ pub async fn compile(request: &JudgeRequest, data: &CompileData, path: &Path) ->
         Some(Language::Go) => "/usr/bin/go build -ldflags \"-s -w\" main.go",
         None => return Err(Error::LanguageNotFound(request.language)),
     };
-    process.cmd = cmd.to_string();
-    process.workdir = path.to_path_buf();
+    let mut process = Process::new(cmd.to_string(), path.to_path_buf());
     // 编译的资源限制为固定的
     process.time_limit = 10000;
     process.memory_limit = 64 * 1024;
