@@ -1,4 +1,4 @@
-use crate::river::judge_response::{JudgeResult, JudgeStatus};
+use crate::river::{JudgeResult, JudgeStatus};
 use crate::river::JudgeResponse;
 use libc::strerror;
 use std::ffi::{CStr, NulError, OsString};
@@ -16,6 +16,7 @@ pub enum Error {
     StringToCStringError(NulError),
     OsStringToStringError(OsString),
     RemoveFileError(PathBuf),
+    UnknownRequestData,
 }
 
 pub type Result<T> = result::Result<T, Error>;

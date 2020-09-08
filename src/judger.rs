@@ -1,7 +1,7 @@
 use super::error::{Error, Result};
 use super::process::{Process, ProcessStatus};
-use crate::river::judge_request::Language;
-use crate::river::judge_response::{JudgeResult, JudgeStatus};
+use crate::river::Language;
+use crate::river::{JudgeResult, JudgeStatus, CompileData, JudgeData};
 use crate::river::{JudgeRequest, JudgeResponse};
 use std::path::Path;
 use tokio::fs;
@@ -23,7 +23,7 @@ impl JudgeResponse {
     }
 }
 
-pub async fn judger(request: &JudgeRequest, path: &Path) -> Result<JudgeResponse> {
+pub async fn judger(request: &JudgeRequest, data: &JudgeData, path: &Path) -> Result<JudgeResponse> {
     let mut resp = JudgeResponse::new();
     let cmd = match Language::from_i32(request.language) {
         Some(Language::C) => "./a.out",
@@ -38,12 +38,13 @@ pub async fn judger(request: &JudgeRequest, path: &Path) -> Result<JudgeResponse
     let mut process = Process::new();
     process.cmd = cmd.to_string();
     process.workdir = path.to_path_buf();
-    process.time_limit = request.time_limit;
-    process.memory_limit = request.memory_limit;
+    process.time_limit = data.time_limit;
+    process.memory_limit = data.memory_limit;
 
+    // TODO: 使用内存流替换，尽可能减少文件读写与复制
     // 写入输入文件
     let in_file = path.join("stdin.txt");
-    if let Err(e) = fs::write(in_file.clone(), request.in_data.clone()).await {
+    if let Err(e) = fs::write(in_file.clone(), data.in_data.clone()).await {
         return Err(Error::FileWriteError(e));
     };
     process.stdin_file = Some(in_file.clone());
@@ -65,7 +66,7 @@ pub async fn judger(request: &JudgeRequest, path: &Path) -> Result<JudgeResponse
     Ok(resp)
 }
 
-pub async fn compile(request: &JudgeRequest, path: &Path) -> Result<JudgeResponse> {
+pub async fn compile(request: &JudgeRequest, data: &CompileData, path: &Path) -> Result<JudgeResponse> {
     let mut resp = JudgeResponse::new();
     // 写入代码
     let filename = match Language::from_i32(request.language) {
@@ -78,7 +79,7 @@ pub async fn compile(request: &JudgeRequest, path: &Path) -> Result<JudgeRespons
         Some(Language::Go) => "main.go",
         None => return Err(Error::LanguageNotFound(request.language)),
     };
-    if let Err(e) = fs::write(path.join(filename), &request.code).await {
+    if let Err(e) = fs::write(path.join(filename), &data.code).await {
         return Err(Error::FileWriteError(e));
     };
 
@@ -119,11 +120,5 @@ pub fn pending() -> JudgeResponse {
 
 pub fn running() -> JudgeResponse {
     let resp = JudgeResponse::new();
-    resp
-}
-
-pub fn compiling() -> JudgeResponse {
-    let mut resp = JudgeResponse::new();
-    resp.status = JudgeStatus::Compiling as i32;
     resp
 }
