@@ -39,9 +39,7 @@ pub async fn judger(
         Some(Language::Go) => "./a.out",
         None => return Err(Error::LanguageNotFound(request.language)),
     };
-    let mut process = Process::new(cmd.to_string(), path.to_path_buf())?;
-    process.time_limit = data.time_limit;
-    process.memory_limit = data.memory_limit;
+    let mut process = Process::new(cmd.to_string(), path.to_path_buf(), data.time_limit, data.memory_limit)?;
 
     // 设置输入数据
     process.set_stdin(&data.in_data)?;
@@ -94,10 +92,8 @@ pub async fn compile(
         Some(Language::Go) => "/usr/bin/go build -ldflags \"-s -w\" main.go",
         None => return Err(Error::LanguageNotFound(request.language)),
     };
-    let mut process = Process::new(cmd.to_string(), path.to_path_buf())?;
     // 编译的资源限制为固定的
-    process.time_limit = 10000;
-    process.memory_limit = 64 * 1024;
+    let process = Process::new(cmd.to_string(), path.to_path_buf(), 10000, 64 * 1024)?;
 
     let status = process.await?;
     if status.exit_code != 0 {

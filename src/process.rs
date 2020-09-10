@@ -20,8 +20,8 @@ use std::time::SystemTime;
 pub struct Process {
     pub pid: i32,
     pub workdir: PathBuf,
-    pub time_limit: i32,
-    pub memory_limit: i32,
+    time_limit: i32,
+    memory_limit: i32,
     stdin_fd: Option<i32>,
     stdout_fd: i32,
     stderr_fd: i32,
@@ -42,7 +42,12 @@ fn path_buf_str(path_buf: &PathBuf) -> Result<String> {
 }
 
 impl Process {
-    pub fn new(cmd: String, workdir: PathBuf) -> Result<Process> {
+    pub fn new(
+        cmd: String,
+        workdir: PathBuf,
+        time_limit: i32,
+        memory_limit: i32,
+    ) -> Result<Process> {
         let (tx, rx) = mpsc::channel();
 
         let memfile = path_buf_str(&workdir)?;
@@ -57,22 +62,22 @@ impl Process {
         let stdout_fd = unsafe {
             libc::shm_open(
                 outfile.as_ptr(),
-                libc::O_RDWR | libc::O_CREAT | libc::O_TRUNC,
-                0,
+                libc::O_RDWR | libc::O_CREAT,
+                libc::S_IRUSR | libc::S_IWUSR,
             )
         };
         let stderr_fd = unsafe {
             libc::shm_open(
                 errfile.as_ptr(),
-                libc::O_RDWR | libc::O_CREAT | libc::O_TRUNC,
-                0,
+                libc::O_RDWR | libc::O_CREAT,
+                libc::S_IRUSR | libc::S_IWUSR,
             )
         };
 
         Ok(Process {
             pid: -1,
-            time_limit: -1,
-            memory_limit: -1,
+            time_limit: time_limit,
+            memory_limit: memory_limit,
             stdin_fd: None,
             stdout_fd: stdout_fd,
             stderr_fd: stderr_fd,
@@ -94,8 +99,8 @@ impl Process {
         let fd = unsafe {
             libc::shm_open(
                 CString::new(memfile).unwrap().as_ptr(),
-                libc::O_RDWR | libc::O_CREAT | libc::O_TRUNC,
-                0,
+                libc::O_RDWR | libc::O_CREAT,
+                libc::S_IRUSR | libc::S_IWUSR,
             )
         };
         if fd <= 0 {
@@ -132,9 +137,14 @@ impl Process {
 
     #[allow(dead_code)]
     #[allow(unused_variables)]
-    // 从 stdout 中读取指定长度的内容
-    pub fn read_stdout(&mut self, len: i32) {
-        // TODO
+    // TODO: 修改读取方式
+    // 从 stdout 中读取内容
+    pub fn read_stdout(self) -> [u8; 1024] {
+        let mut buf: [u8; 1024] = [0; 1024];
+        let size = unsafe {
+            libc::read(self.stdout_fd, buf.as_mut_ptr() as *mut c_void, 1024);
+        };
+        return buf;
     }
 
     #[allow(dead_code)]
@@ -171,6 +181,14 @@ impl Drop for Process {
                     libc::shm_unlink(CString::new(memfile).unwrap().as_ptr());
                 }
             }
+        }
+        // 清理 stdout 和 stderr 的空间
+        let memfile = path_buf_str(&self.workdir).unwrap();
+        let outfile = CString::new(format!("{}{}", "stdout", memfile)).unwrap();
+        let errfile = CString::new(format!("{}{}", "stderr", memfile)).unwrap();
+        unsafe {
+            libc::shm_unlink(CString::new(outfile).unwrap().as_ptr());
+            libc::shm_unlink(CString::new(errfile).unwrap().as_ptr());
         }
     }
 }
@@ -416,8 +434,17 @@ impl Process {
             ru_nivcsw: 0 as libc::c_long,
         };
         unsafe {
-            let val = libc::wait4(pid, &mut status, 0, &mut rusage);
-            if val < 0 {
+            // 等待子进程结束
+            if libc::wait4(pid, &mut status, 0, &mut rusage) < 0 {
+                eprintln!("{:?}", io::Error::last_os_error().raw_os_error());
+                panic!("How dare you!");
+            }
+            // 重置输出偏移量
+            if libc::lseek(self.stdout_fd, 0, libc::SEEK_SET) < 0 {
+                eprintln!("{:?}", io::Error::last_os_error().raw_os_error());
+                panic!("How dare you!");
+            }
+            if libc::lseek(self.stderr_fd, 0, libc::SEEK_SET) < 0 {
                 eprintln!("{:?}", io::Error::last_os_error().raw_os_error());
                 panic!("How dare you!");
             }
@@ -476,6 +503,7 @@ pub struct ProcessStatus {
 #[cfg(test)]
 mod tests {
     use crate::process::Process;
+    use std::ffi::CString;
     use std::fs;
     use tempfile::tempdir_in;
 
@@ -488,12 +516,20 @@ mod tests {
 
     #[tokio::test]
     async fn run() {
-        let cmd = String::from("/bin/echo hello world");
+        let cmd = String::from("/bin/echo hello");
         let pwd = tempdir_in("./runner").unwrap().into_path();
         let path = pwd.to_str().unwrap();
-        let process = Process::new(cmd, pwd.clone()).unwrap();
+        let process = Process::new(cmd, pwd.clone(), 1000, 65535).unwrap();
+        let p = process.clone();
         let status = process.await.unwrap();
         fs::remove_dir_all(path).unwrap();
         assert_eq!(status.exit_code, 0);
+        let mut buf = p.read_stdout();
+        unsafe {
+            libc::printf(
+                CString::new("c string = %s\n").unwrap().as_ptr(),
+                buf.as_mut_ptr(),
+            );
+        }
     }
 }
