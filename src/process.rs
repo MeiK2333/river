@@ -3,7 +3,6 @@ use libc;
 use std::env;
 use std::ffi::c_void;
 use std::ffi::CString;
-use std::fs;
 use std::future::Future;
 use std::io;
 use std::mem;
@@ -23,48 +22,74 @@ pub struct Process {
     pub workdir: PathBuf,
     pub time_limit: i32,
     pub memory_limit: i32,
-    pub stdin_file: Option<PathBuf>,
     stdin_fd: Option<i32>,
+    stdout_fd: i32,
+    stderr_fd: i32,
     pub cmd: String,
     tx: Arc<Mutex<mpsc::Sender<ProcessStatus>>>,
     rx: Arc<Mutex<mpsc::Receiver<ProcessStatus>>>,
 }
 
+fn path_buf_str(path_buf: &PathBuf) -> Result<String> {
+    let file = match path_buf.file_stem() {
+        Some(stem) => match stem.to_str() {
+            Some(val) => val.to_string(),
+            None => return Err(Error::PathBufToStringError(path_buf.clone())),
+        },
+        None => return Err(Error::PathBufToStringError(path_buf.clone())),
+    };
+    Ok(file)
+}
+
 impl Process {
-    pub fn new(cmd: String, workdir: PathBuf) -> Process {
+    pub fn new(cmd: String, workdir: PathBuf) -> Result<Process> {
         let (tx, rx) = mpsc::channel();
-        Process {
+
+        let memfile = path_buf_str(&workdir)?;
+        let outfile = match CString::new(format!("{}{}", "stdout", memfile)) {
+            Ok(val) => val,
+            Err(e) => return Err(Error::StringToCStringError(e)),
+        };
+        let errfile = match CString::new(format!("{}{}", "stderr", memfile)) {
+            Ok(val) => val,
+            Err(e) => return Err(Error::StringToCStringError(e)),
+        };
+        let stdout_fd = unsafe {
+            libc::shm_open(
+                outfile.as_ptr(),
+                libc::O_RDWR | libc::O_CREAT | libc::O_TRUNC,
+                0,
+            )
+        };
+        let stderr_fd = unsafe {
+            libc::shm_open(
+                errfile.as_ptr(),
+                libc::O_RDWR | libc::O_CREAT | libc::O_TRUNC,
+                0,
+            )
+        };
+
+        Ok(Process {
             pid: -1,
             time_limit: -1,
             memory_limit: -1,
-            stdin_file: None,
             stdin_fd: None,
+            stdout_fd: stdout_fd,
+            stderr_fd: stderr_fd,
             cmd: cmd,
             workdir: workdir,
             tx: Arc::new(Mutex::new(tx)),
             rx: Arc::new(Mutex::new(rx)),
-        }
+        })
     }
     fn set_pid(&mut self, pid: i32) {
         self.pid = pid;
     }
 
-    fn workdir_str(&self) -> Result<String> {
-        let file = match self.workdir.file_stem() {
-            Some(stem) => match stem.to_str() {
-                Some(val) => val.to_string(),
-                None => return Err(Error::PathBufToStringError(self.workdir.clone())),
-            },
-            None => return Err(Error::PathBufToStringError(self.workdir.clone())),
-        };
-        Ok(file)
-    }
-
-    #[allow(dead_code)]
-    #[allow(unused_variables)]
     // 为进程设置 stdin 的数据
     pub fn set_stdin(&mut self, in_data: &Vec<u8>) -> Result<()> {
-        let memfile = self.workdir_str()?;
+        let memfile = path_buf_str(&self.workdir)?;
+        let memfile = format!("{}{}", "stdin", memfile);
         // 打开内存文件
         let fd = unsafe {
             libc::shm_open(
@@ -315,25 +340,10 @@ impl Process {
         unsafe {
             // 重定向文件描述符
             if let Some(fd) = self.stdin_fd {
-                if libc::dup2(fd, libc::STDIN_FILENO) < 0 {
-                    let err = io::Error::last_os_error().raw_os_error();
-                    eprintln!("dup2 failure!");
-                    eprintln!("{:?}", io::Error::last_os_error().raw_os_error());
-                    panic!(errno_str(err));
-                }
+                dup(fd, libc::STDIN_FILENO);
             }
-            dup(
-                "stdout.txt",
-                libc::STDOUT_FILENO,
-                libc::O_CREAT | libc::O_RDWR,
-                0o644,
-            );
-            dup(
-                "stderr.txt",
-                libc::STDERR_FILENO,
-                libc::O_CREAT | libc::O_RDWR,
-                0o644,
-            );
+            dup(self.stdout_fd, libc::STDOUT_FILENO);
+            dup(self.stderr_fd, libc::STDERR_FILENO);
             // 墙上时钟限制
             if setitimer(ITIMER_REAL, &rt, ptr::null_mut()) == -1 {
                 eprintln!("setitimer failure!");
@@ -367,17 +377,8 @@ impl Process {
     }
 }
 
-unsafe fn dup(filename: &str, to: libc::c_int, flag: libc::c_int, mode: libc::c_int) {
-    let filename_str = CString::new(filename).unwrap();
-    let filename = filename_str.as_ptr();
-    let fd = libc::open(filename, flag, mode);
-    if fd < 0 {
-        let err = io::Error::last_os_error().raw_os_error();
-        eprintln!("open failure!");
-        eprintln!("{:?}", io::Error::last_os_error().raw_os_error());
-        panic!(errno_str(err));
-    }
-    if libc::dup2(fd, to) < 0 {
+unsafe fn dup(from: libc::c_int, to: libc::c_int) {
+    if libc::dup2(from, to) < 0 {
         let err = io::Error::last_os_error().raw_os_error();
         eprintln!("dup2 failure!");
         eprintln!("{:?}", io::Error::last_os_error().raw_os_error());
@@ -449,20 +450,6 @@ impl Process {
             // How dare you!
             Err(_) => panic!("How dare you!"),
         };
-        let stdout = match fs::read_to_string(&self.workdir.join("stdout.txt")) {
-            Ok(val) => val,
-            Err(_) => panic!("How dare you!"),
-        };
-        if let Err(_) = fs::remove_file(&self.workdir.join("stdout.txt")) {
-            panic!("How dare you!");
-        }
-        let stderr = match fs::read_to_string(&self.workdir.join("stderr.txt")) {
-            Ok(val) => val,
-            Err(_) => panic!("How dare you!"),
-        };
-        if let Err(_) = fs::remove_file(&self.workdir.join("stderr.txt")) {
-            panic!("How dare you!");
-        }
         return ProcessStatus {
             rusage: rusage,
             exit_code: exit_code,
@@ -471,8 +458,6 @@ impl Process {
             time_used: time_used,
             memory_used: memory_used,
             real_time_used: real_time_used,
-            stdout: stdout,
-            stderr: stderr,
         };
     }
 }
@@ -486,6 +471,29 @@ pub struct ProcessStatus {
     pub time_used: i64,
     pub memory_used: i64,
     pub real_time_used: u128,
-    pub stdout: String,
-    pub stderr: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::process::Process;
+    use std::fs;
+    use tempfile::tempdir_in;
+
+    #[test]
+    fn hello() {
+        let s = String::from("hello");
+        let bytes = s.into_bytes();
+        assert_eq!(&[104, 101, 108, 108, 111][..], &bytes[..]);
+    }
+
+    #[tokio::test]
+    async fn run() {
+        let cmd = String::from("/bin/echo hello world");
+        let pwd = tempdir_in("./runner").unwrap().into_path();
+        let path = pwd.to_str().unwrap();
+        let process = Process::new(cmd, pwd.clone()).unwrap();
+        let status = process.await.unwrap();
+        fs::remove_dir_all(path).unwrap();
+        assert_eq!(status.exit_code, 0);
+    }
 }

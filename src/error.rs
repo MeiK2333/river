@@ -7,6 +7,7 @@ use std::io;
 use std::path::PathBuf;
 use std::result;
 
+#[allow(dead_code)]
 #[derive(Debug)]
 pub enum Error {
     CreateTempDirError(io::Error),

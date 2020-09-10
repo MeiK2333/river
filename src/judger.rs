@@ -39,26 +39,15 @@ pub async fn judger(
         Some(Language::Go) => "./a.out",
         None => return Err(Error::LanguageNotFound(request.language)),
     };
-    let mut process = Process::new(cmd.to_string(), path.to_path_buf());
+    let mut process = Process::new(cmd.to_string(), path.to_path_buf())?;
     process.time_limit = data.time_limit;
     process.memory_limit = data.memory_limit;
 
     // 设置输入数据
     process.set_stdin(&data.in_data)?;
 
-    // TODO: 使用内存流替换，尽可能减少文件读写与复制
-    // 写入输入文件
-    let in_file = path.join("stdin.txt");
-    if let Err(e) = fs::write(in_file.clone(), data.in_data.clone()).await {
-        return Err(Error::FileWriteError(e));
-    };
-    process.stdin_file = Some(in_file.clone());
-
+    // 开始执行并等待返回结果
     let status = process.await?;
-
-    if let Err(_) = fs::remove_file(in_file.clone()).await {
-        return Err(Error::RemoveFileError(in_file.clone()));
-    }
 
     resp.status = JudgeStatus::Ended as i32;
     // TODO: 根据返回值等判断 tle、mle、re 等状态
@@ -105,7 +94,7 @@ pub async fn compile(
         Some(Language::Go) => "/usr/bin/go build -ldflags \"-s -w\" main.go",
         None => return Err(Error::LanguageNotFound(request.language)),
     };
-    let mut process = Process::new(cmd.to_string(), path.to_path_buf());
+    let mut process = Process::new(cmd.to_string(), path.to_path_buf())?;
     // 编译的资源限制为固定的
     process.time_limit = 10000;
     process.memory_limit = 64 * 1024;
@@ -113,7 +102,7 @@ pub async fn compile(
     let status = process.await?;
     if status.exit_code != 0 {
         resp.set_process_status(&status);
-        resp.errmsg = format!("{}{}", status.stdout, status.stderr);
+        // resp.errmsg = format!("{}{}", status.stdout, status.stderr);
         resp.result = JudgeResult::CompileError as i32;
     }
     Ok(resp)
