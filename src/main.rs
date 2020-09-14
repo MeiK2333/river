@@ -11,8 +11,11 @@ use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 
 mod error;
+mod exec_args;
 mod judger;
 mod process;
+mod reader;
+mod runner;
 
 pub mod river {
     tonic::include_proto!("river");

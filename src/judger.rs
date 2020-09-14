@@ -1,5 +1,6 @@
 use super::error::{Error, Result};
-use super::process::{Process, ProcessStatus};
+use super::process::Process;
+use super::runner::RunnerStatus;
 use crate::river::Language;
 use crate::river::{CompileData, JudgeData, JudgeResult, JudgeStatus};
 use crate::river::{JudgeRequest, JudgeResponse};
@@ -17,7 +18,7 @@ impl JudgeResponse {
         }
     }
 
-    fn set_process_status(self: &mut Self, status: &ProcessStatus) {
+    fn set_process_status(self: &mut Self, status: &RunnerStatus) {
         self.time_used = status.time_used;
         self.memory_used = status.memory_used;
     }
@@ -39,13 +40,27 @@ pub async fn judger(
         Some(Language::Go) => "./a.out",
         None => return Err(Error::LanguageNotFound(request.language)),
     };
-    let mut process = Process::new(cmd.to_string(), path.to_path_buf(), data.time_limit, data.memory_limit)?;
+    let mut process = Process::new(
+        cmd.to_string(),
+        path.to_path_buf(),
+        data.time_limit,
+        data.memory_limit,
+    )?;
 
     // 设置输入数据
     process.set_stdin(&data.in_data)?;
 
     // 开始执行并等待返回结果
-    let status = process.await?;
+    let runner = process.runner.clone();
+    let status = runner.await?;
+    // TODO: 对比答案
+    // 此处是为了消除 warning 的临时代码
+    let reader = process.stdout_reader()?;
+    let mut buf: [u8; 1024] = [0; 1024];
+    reader.readline(&mut buf)?;
+    let reader = process.stderr_reader()?;
+    let mut buf: [u8; 1024] = [0; 1024];
+    reader.readline(&mut buf)?;
 
     resp.status = JudgeStatus::Ended as i32;
     // TODO: 根据返回值等判断 tle、mle、re 等状态
@@ -95,7 +110,8 @@ pub async fn compile(
     // 编译的资源限制为固定的
     let process = Process::new(cmd.to_string(), path.to_path_buf(), 10000, 64 * 1024)?;
 
-    let status = process.await?;
+    let runner = process.runner.clone();
+    let status = runner.await?;
     if status.exit_code != 0 {
         resp.set_process_status(&status);
         // resp.errmsg = format!("{}{}", status.stdout, status.stderr);
