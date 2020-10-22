@@ -55,11 +55,30 @@ pub async fn judger(
     let runner = process.runner.clone();
     let status = runner.await?;
 
-    // TODO: 根据返回值等判断 tle、mle、re 等状态
-    // TODO: 对比答案，检查结果
-    if status.exit_code != 0 {
-        resp.set_process_status(&status);
-        resp.state = Some(State::Result(JudgeResult::WrongAnswer as i32));
+    resp.set_process_status(&status);
+    // 先判断 tle 和 mle，一是因为 tle 和 mle 也会导致信号中断，二是优先程序复杂度判断
+    if status.time_used > data.time_limit.into() {
+        // TLE
+        resp.state = Some(State::Result(JudgeResult::TimeLimitExceeded as i32));
+    } else if status.memory_used > data.memory_limit.into() {
+        // MLE
+        resp.state = Some(State::Result(JudgeResult::MemoryLimitExceeded as i32));
+    } else if status.signal != 0 {
+        // 被信号中断的程序，RE
+        resp.stderr = match fs::read_to_string(path.join(STDERR_FILENAME)).await {
+            Ok(val) => val,
+            Err(e) => return Err(Error::FileReadError(e)),
+        };
+        resp.errmsg = format!("Program was interrupted by signal: {}", status.signal);
+        resp.state = Some(State::Result(JudgeResult::RuntimeError as i32));
+    } else if status.exit_code != 0 {
+        // 返回值不为 0 的程序，RE（虽然有可能是用户自己返回的）
+        resp.errmsg = format!("Exceptional program return code: {}", status.exit_code);
+        resp.state = Some(State::Result(JudgeResult::RuntimeError as i32));
+    } else {
+        // TODO: AC\WA\PE
+        // 没有 ole 这种操作，之前 ole 就是错的
+        resp.state = Some(State::Result(JudgeResult::Accepted as i32));
     }
     Ok(resp)
 }
@@ -114,16 +133,14 @@ pub async fn compile(
     if status.exit_code != 0 {
         debug!("compile exit code: {}", status.exit_code);
         // 从 stdout 和 stderr 中获取错误信息
-        let stdout = match fs::read_to_string(path.join(STDOUT_FILENAME)).await {
+        resp.stdout = match fs::read_to_string(path.join(STDOUT_FILENAME)).await {
             Ok(val) => val,
             Err(e) => return Err(Error::FileReadError(e)),
         };
-        let stderr = match fs::read_to_string(path.join(STDERR_FILENAME)).await {
+        resp.stderr = match fs::read_to_string(path.join(STDERR_FILENAME)).await {
             Ok(val) => val,
             Err(e) => return Err(Error::FileReadError(e)),
         };
-        resp.stdout = stdout;
-        resp.stderr = stderr;
         resp.state = Some(State::Result(JudgeResult::CompileError as i32));
     } else {
         resp.state = Some(State::Result(JudgeResult::Accepted as i32));

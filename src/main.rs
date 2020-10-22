@@ -1,4 +1,4 @@
-#![recursion_limit = "256"]
+#![recursion_limit = "512"]
 #[macro_use]
 extern crate log;
 
@@ -6,8 +6,9 @@ use env_logger::Env;
 use futures::StreamExt;
 use futures_core::Stream;
 use river::judge_request::Data;
+use river::judge_response::State;
 use river::river_server::{River, RiverServer};
-use river::{JudgeRequest, JudgeResponse};
+use river::{JudgeRequest, JudgeResponse, JudgeResult};
 use std::pin::Pin;
 use tempfile::tempdir_in;
 use tonic::transport::Server;
@@ -48,6 +49,8 @@ impl River for RiverService {
                     return
                 },
             };
+            // 是否通过编译
+            let mut compile_success = false;
             debug!("create tempdir: {:?}", pwd);
 
             while let Some(req) = stream.next().await {
@@ -64,7 +67,12 @@ impl River for RiverService {
                     },
                     Some(Data::JudgeData(data)) => {
                         debug!("judge request");
-                        judger::judger(&req, &data, &pwd.path()).await
+                        // 必须通过编译才能运行
+                        if !compile_success {
+                            Ok(error::system_error(error::Error::CustomError("Please compile first".to_string())))
+                        } else {
+                            judger::judger(&req, &data, &pwd.path()).await
+                        }
                     },
                     None => Err(error::Error::RequestDataNotFound),
                     _ => Err(error::Error::UnknownRequestData),
@@ -73,6 +81,14 @@ impl River for RiverService {
                     Ok(res) => res,
                     Err(e) => error::system_error(e)
                 };
+                // 如果通过了编译，则标记为成功
+                if let Some(Data::CompileData(_)) = &req.data {
+                    if let Some(State::Result(rst)) = result.state {
+                        if rst == JudgeResult::Accepted as i32 {
+                            compile_success = true;
+                        }
+                    }
+                }
                 yield result;
             }
             while let Some(_) = stream.next().await {}
