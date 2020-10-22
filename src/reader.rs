@@ -2,8 +2,10 @@ use super::error::{Error, Result};
 use libc;
 use std::ffi::CString;
 use std::os::raw::c_char;
+use std::str;
 
 pub struct Reader {
+    fd: i32,
     stream: *mut libc::FILE,
 }
 
@@ -14,7 +16,7 @@ impl Reader {
             Err(e) => return Err(Error::StringToCStringError(e)),
         };
         let stream = unsafe { libc::fdopen(fd, mode.as_ptr()) };
-        Ok(Reader { stream: stream })
+        Ok(Reader { fd, stream: stream })
     }
     pub fn readline(&self, buf: &mut [u8]) -> Result<()> {
         let res = unsafe {
@@ -28,6 +30,19 @@ impl Reader {
             return Err(Error::SyscallError("fgets".to_string()));
         }
         Ok(())
+    }
+    pub fn read(&self) -> Result<String> {
+        let mut result: String = "".to_owned();
+        let mut buf: [u8; 1024] = [0; 1024];
+        while unsafe { libc::read(self.fd, buf.as_mut_ptr() as *mut libc::c_void, 1024) } != 0 {
+            let s = match str::from_utf8(&buf) {
+                Ok(val) => (val),
+                Err(_) => return Err(Error::SyscallError("read".to_string())),
+            };
+            debug!("{}", s);
+            result.push_str(s);
+        }
+        Ok(result)
     }
 }
 

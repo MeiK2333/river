@@ -1,5 +1,6 @@
+use crate::river::judge_response::State;
 use crate::river::JudgeResponse;
-use crate::river::{JudgeResult, JudgeStatus};
+use crate::river::JudgeResult;
 use libc::strerror;
 use std::ffi::{CStr, NulError, OsString};
 use std::fmt;
@@ -21,6 +22,7 @@ pub enum Error {
     UnknownRequestData,
     RequestDataNotFound,
     SyscallError(String),
+    CustomError(String),
 }
 
 pub type Result<T> = result::Result<T, Error>;
@@ -44,6 +46,7 @@ impl fmt::Display for Error {
                 let reason = errno_str(errno);
                 write!(f, "SyscallError: `{}` {}", syscall, reason)
             }
+            Error::CustomError(ref reason) => write!(f, "{}", reason),
             _ => write!(f, "{:?}", self),
         }
     }
@@ -53,8 +56,7 @@ pub fn system_error(err: Error) -> JudgeResponse {
     JudgeResponse {
         time_used: 0,
         memory_used: 0,
-        result: JudgeResult::SystemError as i32,
+        state: Some(State::Result(JudgeResult::SystemError as i32)),
         errmsg: format!("{}", err).into(),
-        status: JudgeStatus::Ended as i32,
     }
 }

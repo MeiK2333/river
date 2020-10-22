@@ -1,5 +1,8 @@
 #![recursion_limit = "256"]
+#[macro_use]
+extern crate log;
 
+use env_logger::Env;
 use futures::StreamExt;
 use futures_core::Stream;
 use river::judge_request::Data;
@@ -36,7 +39,6 @@ impl River for RiverService {
         let mut stream = request.into_inner();
 
         let output = async_stream::try_stream! {
-
             // 创建评测使用的临时目录
             // 无需主动删除，变量在 drop 之后会自动删除临时文件夹
             let pwd = match tempdir_in("./runner") {
@@ -46,6 +48,7 @@ impl River for RiverService {
                     return
                 },
             };
+            debug!("create tempdir: {:?}", pwd);
 
             while let Some(req) = stream.next().await {
                 // TODO: 使用锁或者资源量等机制限制并发
@@ -55,8 +58,14 @@ impl River for RiverService {
 
                 yield judger::running();
                 let result = match &req.data {
-                    Some(Data::CompileData(data)) => judger::compile(&req, &data, &pwd.path()).await,
-                    Some(Data::JudgeData(data)) => judger::judger(&req, &data, &pwd.path()).await,
+                    Some(Data::CompileData(data)) => {
+                        debug!("compile request");
+                        judger::compile(&req, &data, &pwd.path()).await
+                    },
+                    Some(Data::JudgeData(data)) => {
+                        debug!("judge request");
+                        judger::judger(&req, &data, &pwd.path()).await
+                    },
                     None => Err(error::Error::RequestDataNotFound),
                     _ => Err(error::Error::UnknownRequestData),
                 };
@@ -75,8 +84,16 @@ impl River for RiverService {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let env = Env::default()
+        .filter_or("MY_LOG_LEVEL", "debug")
+        .write_style_or("MY_LOG_STYLE", "always");
+
+    env_logger::init_from_env(env);
+
     let addr = "127.0.0.1:4003".parse()?;
     let river = RiverService::default();
+
+    info!("listen on: {}", addr);
 
     Server::builder()
         .concurrency_limit_per_connection(5)

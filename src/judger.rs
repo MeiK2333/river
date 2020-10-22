@@ -1,6 +1,7 @@
 use super::error::{Error, Result};
 use super::process::Process;
 use super::runner::RunnerStatus;
+use crate::river::judge_response::State;
 use crate::river::Language;
 use crate::river::{CompileData, JudgeData, JudgeResult, JudgeStatus};
 use crate::river::{JudgeRequest, JudgeResponse};
@@ -12,9 +13,8 @@ impl JudgeResponse {
         JudgeResponse {
             time_used: 0,
             memory_used: 0,
-            result: JudgeResult::Accepted as i32,
             errmsg: "".into(),
-            status: JudgeStatus::Running as i32,
+            state: Some(State::Status(JudgeStatus::Running as i32)),
         }
     }
 
@@ -62,13 +62,11 @@ pub async fn judger(
     let mut buf: [u8; 1024] = [0; 1024];
     reader.readline(&mut buf)?;
 
-    resp.status = JudgeStatus::Ended as i32;
     // TODO: 根据返回值等判断 tle、mle、re 等状态
     // TODO: 对比答案，检查结果
     if status.exit_code != 0 {
         resp.set_process_status(&status);
-        resp.result = JudgeResult::WrongAnswer as i32;
-        resp.status = JudgeStatus::Ended as i32;
+        resp.state = Some(State::Result(JudgeResult::WrongAnswer as i32));
     }
     Ok(resp)
 }
@@ -79,7 +77,6 @@ pub async fn compile(
     path: &Path,
 ) -> Result<JudgeResponse> {
     let mut resp = JudgeResponse::new();
-    resp.status = JudgeStatus::Ended as i32;
     // 写入代码
     let filename = match Language::from_i32(request.language) {
         Some(Language::C) => "main.c",
@@ -112,17 +109,26 @@ pub async fn compile(
 
     let runner = process.runner.clone();
     let status = runner.await?;
+    resp.set_process_status(&status);
     if status.exit_code != 0 {
-        resp.set_process_status(&status);
-        // resp.errmsg = format!("{}{}", status.stdout, status.stderr);
-        resp.result = JudgeResult::CompileError as i32;
+        debug!("compile exit code: {}", status.exit_code);
+        let reader = process.stdout_reader()?;
+        let stdout = reader.read()?;
+        debug!("stdout {}", stdout);
+        let reader = process.stderr_reader()?;
+        let stderr = reader.read()?;
+        debug!("stderr {}", stderr);
+        resp.errmsg = stderr;
+        resp.state = Some(State::Result(JudgeResult::CompileError as i32));
+    } else {
+        resp.state = Some(State::Result(JudgeResult::Accepted as i32));
     }
     Ok(resp)
 }
 
 pub fn pending() -> JudgeResponse {
     let mut resp = JudgeResponse::new();
-    resp.status = JudgeStatus::Pending as i32;
+    resp.state = Some(State::Status(JudgeStatus::Pending as i32));
     resp
 }
 

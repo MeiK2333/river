@@ -62,11 +62,13 @@ enum JudgeStatus {
 message JudgeResponse {
   int64 time_used = 1;
   int64 memory_used = 2;
-  JudgeResult result = 3;
+  oneof state {
+    JudgeResult result = 3;
+    JudgeStatus status = 9;
+  }
   // int32 errno = 4;
   // int32 exit_code = 5;
   // string stdout = 6;
   // string stderr = 7;
   string errmsg = 8;
-  JudgeStatus status = 9;
 }

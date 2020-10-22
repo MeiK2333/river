@@ -78,6 +78,9 @@ impl Process {
 
     // 为进程设置 stdin 的数据
     pub fn set_stdin(&mut self, in_data: &Vec<u8>) -> Result<()> {
+        if in_data.len() == 0 {
+            return Ok(())
+        }
         let memfile = path_buf_str(&self.runner.workdir)?;
         let memfile = format!("{}{}", "stdin", memfile);
         // 打开内存文件
