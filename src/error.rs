@@ -14,6 +14,7 @@ pub enum Error {
     CreateTempDirError(io::Error),
     LanguageNotFound(i32),
     FileWriteError(io::Error),
+    FileReadError(io::Error),
     ChannelRecvError,
     StringToCStringError(NulError),
     OsStringToStringError(OsString),
@@ -57,6 +58,8 @@ pub fn system_error(err: Error) -> JudgeResponse {
         time_used: 0,
         memory_used: 0,
         state: Some(State::Result(JudgeResult::SystemError as i32)),
+        stdout: "".into(),
+        stderr: "".into(),
         errmsg: format!("{}", err).into(),
     }
 }

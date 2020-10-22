@@ -13,11 +13,11 @@ use tempfile::tempdir_in;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 
+mod config;
 mod error;
 mod exec_args;
 mod judger;
 mod process;
-mod reader;
 mod runner;
 
 pub mod river {

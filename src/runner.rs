@@ -1,6 +1,8 @@
+use super::config::{STDERR_FILENAME, STDIN_FILENAME, STDOUT_FILENAME};
 use super::error::{errno_str, Error, Result};
 use super::exec_args::ExecArgs;
 use std::env;
+use std::ffi::CString;
 use std::future::Future;
 use std::io;
 use std::path::PathBuf;
@@ -18,9 +20,6 @@ pub struct Runner {
     pub workdir: PathBuf,
     pub time_limit: i32,
     pub memory_limit: i32,
-    pub stdin_fd: Option<i32>,
-    pub stdout_fd: i32,
-    pub stderr_fd: i32,
     pub cmd: String,
     pub tx: Arc<Mutex<mpsc::Sender<RunnerStatus>>>,
     pub rx: Arc<Mutex<mpsc::Receiver<RunnerStatus>>>,
@@ -109,6 +108,24 @@ impl Future for Runner {
     }
 }
 
+unsafe fn dup(filename: &str, to: libc::c_int, flag: libc::c_int, mode: libc::c_int) {
+    let filename_str = CString::new(filename).unwrap();
+    let filename = filename_str.as_ptr();
+    let fd = libc::open(filename, flag, mode);
+    if fd < 0 {
+        let err = io::Error::last_os_error().raw_os_error();
+        eprintln!("open failure!");
+        eprintln!("{:?}", io::Error::last_os_error().raw_os_error());
+        panic!(errno_str(err));
+    }
+    if libc::dup2(fd, to) < 0 {
+        let err = io::Error::last_os_error().raw_os_error();
+        eprintln!("dup2 failure!");
+        eprintln!("{:?}", io::Error::last_os_error().raw_os_error());
+        panic!(errno_str(err));
+    }
+}
+
 impl Runner {
     pub fn run(&self) {
         // 子进程里崩溃也无法返回，崩溃就直接崩溃了
@@ -132,11 +149,19 @@ impl Runner {
         };
         unsafe {
             // 重定向文件描述符
-            if let Some(fd) = self.stdin_fd {
-                dup(fd, libc::STDIN_FILENO);
-            }
-            dup(self.stdout_fd, libc::STDOUT_FILENO);
-            dup(self.stderr_fd, libc::STDERR_FILENO);
+            dup(STDIN_FILENAME, libc::STDIN_FILENO, libc::O_RDONLY, 0o644);
+            dup(
+                STDOUT_FILENAME,
+                libc::STDOUT_FILENO,
+                libc::O_CREAT | libc::O_RDWR,
+                0o644,
+            );
+            dup(
+                STDERR_FILENAME,
+                libc::STDERR_FILENO,
+                libc::O_CREAT | libc::O_RDWR,
+                0o644,
+            );
             // 墙上时钟限制
             if setitimer(ITIMER_REAL, &rt, ptr::null_mut()) == -1 {
                 eprintln!("setitimer failure!");
@@ -167,15 +192,6 @@ impl Runner {
             libc::execve(exec_args.pathname, exec_args.argv, exec_args.envp);
         }
         panic!("How dare you!");
-    }
-}
-
-unsafe fn dup(from: libc::c_int, to: libc::c_int) {
-    if libc::dup2(from, to) < 0 {
-        let err = io::Error::last_os_error().raw_os_error();
-        eprintln!("dup2 failure!");
-        eprintln!("{:?}", io::Error::last_os_error().raw_os_error());
-        panic!(errno_str(err));
     }
 }
 
@@ -211,15 +227,6 @@ impl Runner {
         unsafe {
             // 等待子进程结束
             if libc::wait4(pid, &mut status, 0, &mut rusage) < 0 {
-                eprintln!("{:?}", io::Error::last_os_error().raw_os_error());
-                panic!("How dare you!");
-            }
-            // 重置输出偏移量
-            if libc::lseek(self.stdout_fd, 0, libc::SEEK_SET) < 0 {
-                eprintln!("{:?}", io::Error::last_os_error().raw_os_error());
-                panic!("How dare you!");
-            }
-            if libc::lseek(self.stderr_fd, 0, libc::SEEK_SET) < 0 {
                 eprintln!("{:?}", io::Error::last_os_error().raw_os_error());
                 panic!("How dare you!");
             }
