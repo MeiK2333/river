@@ -14,12 +14,14 @@ use tempfile::tempdir_in;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 
+mod allow;
 mod config;
 mod error;
 mod exec_args;
 mod judger;
 mod process;
 mod runner;
+mod seccomp;
 
 pub mod river {
     tonic::include_proto!("river");

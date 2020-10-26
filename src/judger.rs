@@ -130,8 +130,9 @@ pub async fn compile(
     let runner = process.runner.clone();
     let status = runner.await?;
     resp.set_process_status(&status);
-    if status.exit_code != 0 {
+    if status.exit_code != 0 || status.signal != 0 {
         debug!("compile exit code: {}", status.exit_code);
+        debug!("compile signal: {}", status.exit_code);
         // 从 stdout 和 stderr 中获取错误信息
         resp.stdout = match fs::read_to_string(path.join(STDOUT_FILENAME)).await {
             Ok(val) => val,

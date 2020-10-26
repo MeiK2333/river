@@ -1,6 +1,9 @@
+use super::allow::gen_rules;
 use super::config::{STDERR_FILENAME, STDIN_FILENAME, STDOUT_FILENAME};
 use super::error::{errno_str, Error, Result};
 use super::exec_args::ExecArgs;
+use super::seccomp::*;
+use std::convert::TryInto;
 use std::env;
 use std::ffi::CString;
 use std::future::Future;
@@ -189,6 +192,11 @@ impl Runner {
                 eprintln!("{:?}", io::Error::last_os_error().raw_os_error());
                 panic!("How dare you!");
             }
+            let filter = SeccompFilter::new(gen_rules().into_iter().collect(), SeccompAction::Kill)
+                .unwrap()
+                .try_into()
+                .unwrap();
+            SeccompFilter::apply(filter).unwrap();
             libc::execve(exec_args.pathname, exec_args.argv, exec_args.envp);
         }
         panic!("How dare you!");
