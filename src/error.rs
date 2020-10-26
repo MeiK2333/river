@@ -23,6 +23,8 @@ pub enum Error {
     UnknownRequestData,
     RequestDataNotFound,
     SyscallError(String),
+    OpenFileError(PathBuf, io::Error),
+    ReadFileError(PathBuf, io::Error),
     CustomError(String),
 }
 

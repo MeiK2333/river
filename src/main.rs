@@ -20,6 +20,7 @@ mod error;
 mod exec_args;
 mod judger;
 mod process;
+mod result;
 mod runner;
 mod seccomp;
 

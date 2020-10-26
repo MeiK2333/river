@@ -2,12 +2,14 @@ use super::config::{STDERR_FILENAME, STDOUT_FILENAME};
 use super::error::{Error, Result};
 use super::process::Process;
 use super::runner::RunnerStatus;
+use crate::result::stanard_result;
 use crate::river::judge_response::State;
 use crate::river::Language;
 use crate::river::{CompileData, JudgeData, JudgeResult, JudgeStatus};
 use crate::river::{JudgeRequest, JudgeResponse};
 use std::path::Path;
 use tokio::fs;
+use tokio::io::AsyncReadExt;
 
 impl JudgeResponse {
     fn new() -> JudgeResponse {
@@ -76,9 +78,17 @@ pub async fn judger(
         resp.errmsg = format!("Exceptional program return code: {}", status.exit_code);
         resp.state = Some(State::Result(JudgeResult::RuntimeError as i32));
     } else {
-        // TODO: AC\WA\PE
         // 没有 ole 这种操作，之前 ole 就是错的
-        resp.state = Some(State::Result(JudgeResult::Accepted as i32));
+        let mut file = match fs::File::open(path.join(STDOUT_FILENAME)).await {
+            Ok(val) => val,
+            Err(e) => return Err(Error::OpenFileError(path.join(STDOUT_FILENAME), e)),
+        };
+        let mut out = Vec::new();
+        if let Err(e) = file.read_to_end(&mut out).await {
+            return Err(Error::ReadFileError(path.join(STDOUT_FILENAME), e));
+        };
+        let result = stanard_result(&out, &data.out_data)?;
+        resp.state = Some(State::Result(result as i32));
     }
     Ok(resp)
 }
