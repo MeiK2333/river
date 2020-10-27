@@ -104,8 +104,8 @@ impl River for RiverService {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let env = Env::default()
-        .filter_or("MY_LOG_LEVEL", "debug")
-        .write_style_or("MY_LOG_STYLE", "always");
+        .filter_or("LOG_LEVEL", "debug,h2=info,hyper=info")
+        .write_style_or("LOG_STYLE", "always");
 
     env_logger::init_from_env(env);
 
