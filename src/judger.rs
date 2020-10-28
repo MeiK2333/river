@@ -134,7 +134,7 @@ pub async fn compile(
         &v,
         // 编译的资源限制为固定的
         10000,
-        64 * 1024,
+        256 * 1024,
     )?;
 
     let mut runner = process.runner.clone();

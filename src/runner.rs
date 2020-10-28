@@ -215,12 +215,16 @@ impl Runner {
                 filter.add_rules(syscall_number, rules).unwrap();
                 let (syscall_number, rules) = trace_syscall(libc::SYS_munmap);
                 filter.add_rules(syscall_number, rules).unwrap();
+                let (syscall_number, rules) = trace_syscall(libc::SYS_mremap);
+                filter.add_rules(syscall_number, rules).unwrap();
             } else {
                 let (syscall_number, rules) = allow_syscall(libc::SYS_brk);
                 filter.add_rules(syscall_number, rules).unwrap();
                 let (syscall_number, rules) = allow_syscall(libc::SYS_mmap);
                 filter.add_rules(syscall_number, rules).unwrap();
                 let (syscall_number, rules) = allow_syscall(libc::SYS_munmap);
+                filter.add_rules(syscall_number, rules).unwrap();
+                let (syscall_number, rules) = allow_syscall(libc::SYS_mremap);
                 filter.add_rules(syscall_number, rules).unwrap();
             }
             SeccompFilter::apply(filter.try_into().unwrap()).unwrap();
