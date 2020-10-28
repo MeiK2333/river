@@ -35,6 +35,7 @@ pub async fn judger(
     path: &Path,
 ) -> Result<JudgeResponse> {
     let mut resp = JudgeResponse::new();
+    // TODO: 使用配置文件
     let cmd = match Language::from_i32(request.language) {
         Some(Language::C) => "./a.out",
         Some(Language::Cpp) => "./a.out",
@@ -120,9 +121,8 @@ pub async fn compile(
         Some(Language::Cpp) => "/usr/bin/g++ main.cpp -O2 -Wall --static -o a.out --std=gnu++17",
         Some(Language::Python) => "/usr/bin/python3 -m compileall main.py",
         Some(Language::Rust) => "/usr/bin/rustc main.rs -o a.out -C opt-level=2",
-        // TODO: eslint......
-        Some(Language::Node) => "/bin/echo hello",
-        Some(Language::TypeScript) => "/usr/bin/tsc",
+        Some(Language::Node) => "validate.js main.js",
+        Some(Language::TypeScript) => "/usr/bin/tsc main.ts",
         Some(Language::Go) => "/usr/bin/go build -ldflags \"-s -w\" main.go",
         None => return Err(Error::LanguageNotFound(request.language)),
     };
