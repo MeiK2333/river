@@ -5,7 +5,7 @@ pub fn gen_rules() -> Vec<SyscallRuleSet> {
     vec![
         allow_syscall(libc::SYS_access),
         allow_syscall(libc::SYS_arch_prctl),
-        allow_syscall(libc::SYS_brk),
+        // allow_syscall(libc::SYS_brk),
         allow_syscall(libc::SYS_chmod),
         allow_syscall(libc::SYS_clock_gettime),
         allow_syscall(libc::SYS_clone),
@@ -32,9 +32,9 @@ pub fn gen_rules() -> Vec<SyscallRuleSet> {
         allow_syscall(libc::SYS_ioctl),
         allow_syscall(libc::SYS_lseek),
         allow_syscall(libc::SYS_lstat),
-        allow_syscall(libc::SYS_mmap),
+        // allow_syscall(libc::SYS_mmap),
         allow_syscall(libc::SYS_mprotect),
-        allow_syscall(libc::SYS_munmap),
+        // allow_syscall(libc::SYS_munmap),
         allow_syscall(libc::SYS_open),
         allow_syscall(libc::SYS_openat),
         allow_syscall(libc::SYS_prlimit64),
@@ -57,4 +57,13 @@ pub fn gen_rules() -> Vec<SyscallRuleSet> {
         allow_syscall(libc::SYS_write),
         allow_syscall(libc::SYS_writev),
     ]
+}
+
+#[inline(always)]
+pub fn trace_syscall(syscall_number: i64) -> SyscallRuleSet {
+    (
+        syscall_number,
+        // 为什么是 42？因为 42 是宇宙终极问题的答案
+        vec![SeccompRule::new(vec![], SeccompAction::Trace(42))],
+    )
 }

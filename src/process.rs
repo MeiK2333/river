@@ -36,6 +36,7 @@ impl Process {
                 pid: -1,
                 time_limit: time_limit,
                 memory_limit: memory_limit,
+                traceme: true,
                 cmd: cmd,
                 workdir: workdir,
                 tx: Arc::new(Mutex::new(tx)),

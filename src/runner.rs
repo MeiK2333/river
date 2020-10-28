@@ -1,4 +1,4 @@
-use super::allow::gen_rules;
+use super::allow::{gen_rules, trace_syscall};
 use super::config::{STDERR_FILENAME, STDIN_FILENAME, STDOUT_FILENAME};
 use super::error::{errno_str, Error, Result};
 use super::exec_args::ExecArgs;
@@ -6,8 +6,9 @@ use super::seccomp::*;
 use std::convert::TryInto;
 use std::env;
 use std::ffi::CString;
+use std::fs::File;
 use std::future::Future;
-use std::io;
+use std::io::{self, prelude::*, BufReader};
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::ptr;
@@ -23,6 +24,7 @@ pub struct Runner {
     pub workdir: PathBuf,
     pub time_limit: i32,
     pub memory_limit: i32,
+    pub traceme: bool,
     pub cmd: String,
     pub tx: Arc<Mutex<mpsc::Sender<RunnerStatus>>>,
     pub rx: Arc<Mutex<mpsc::Receiver<RunnerStatus>>>,
@@ -43,6 +45,7 @@ pub struct RunnerStatus {
     pub time_used: i64,
     pub memory_used: i64,
     pub real_time_used: u128,
+    pub errmsg: String,
 }
 
 const ITIMER_REAL: libc::c_int = 0;
@@ -106,6 +109,11 @@ impl Future for Runner {
                 },
                 Err(_) => return Poll::Ready(Err(Error::ChannelRecvError)),
             };
+            // 处理评测进程的异常
+            // 程序本身无法发出负数的 signal，因此此处使用负数作为异常标识
+            if status.signal < 0 {
+                return Poll::Ready(Err(Error::JudgeThreadError(status.errmsg)));
+            }
             return Poll::Ready(Ok(status));
         }
     }
@@ -192,11 +200,30 @@ impl Runner {
                 eprintln!("{:?}", io::Error::last_os_error().raw_os_error());
                 panic!("How dare you!");
             }
-            let filter = SeccompFilter::new(gen_rules().into_iter().collect(), SeccompAction::Kill)
-                .unwrap()
-                .try_into()
-                .unwrap();
-            SeccompFilter::apply(filter).unwrap();
+            if self.traceme {
+                // 设置 trace 模式
+                libc::ptrace(libc::PTRACE_TRACEME, 0, 0, 0);
+                // 发送信号以确保父进程先执行
+                libc::kill(libc::getpid(), libc::SIGSTOP);
+            }
+            let mut filter =
+                SeccompFilter::new(gen_rules().into_iter().collect(), SeccompAction::Kill).unwrap();
+            if self.traceme {
+                let (syscall_number, rules) = trace_syscall(libc::SYS_brk);
+                filter.add_rules(syscall_number, rules).unwrap();
+                let (syscall_number, rules) = trace_syscall(libc::SYS_mmap);
+                filter.add_rules(syscall_number, rules).unwrap();
+                let (syscall_number, rules) = trace_syscall(libc::SYS_munmap);
+                filter.add_rules(syscall_number, rules).unwrap();
+            } else {
+                let (syscall_number, rules) = allow_syscall(libc::SYS_brk);
+                filter.add_rules(syscall_number, rules).unwrap();
+                let (syscall_number, rules) = allow_syscall(libc::SYS_mmap);
+                filter.add_rules(syscall_number, rules).unwrap();
+                let (syscall_number, rules) = allow_syscall(libc::SYS_munmap);
+                filter.add_rules(syscall_number, rules).unwrap();
+            }
+            SeccompFilter::apply(filter.try_into().unwrap()).unwrap();
             libc::execve(exec_args.pathname, exec_args.argv, exec_args.envp);
         }
         panic!("How dare you!");
@@ -232,11 +259,85 @@ impl Runner {
             ru_nvcsw: 0 as libc::c_long,
             ru_nivcsw: 0 as libc::c_long,
         };
+        // 程序占用内存定义为程序数据段 + 栈大小
+        // from: https://www.hackerearth.com/practice/notes/vivekprakash/technical-diving-into-memory-used-by-a-program-in-online-judges/
+        // VmRSS 为程序当前驻留在物理内存中的大小，对虚拟内存等无效
+        let mut vm_mem = 0;
+
         unsafe {
-            // 等待子进程结束
-            if libc::wait4(pid, &mut status, 0, &mut rusage) < 0 {
-                eprintln!("{:?}", io::Error::last_os_error().raw_os_error());
-                panic!("How dare you!");
+            if self.traceme {
+                // 设置 trace 模式与 seccomp 的互动
+                libc::waitpid(pid, &mut status, 0);
+                libc::ptrace(libc::PTRACE_SETOPTIONS, pid, 0, libc::PTRACE_O_TRACESECCOMP);
+                // 控制子进程恢复执行
+                libc::ptrace(libc::PTRACE_CONT, pid, 0, 0);
+            }
+            loop {
+                if self.traceme {
+                    // in call
+                    // seccomp 会在系统调用之前触发 trace，因此此处空等一次，等待到系统调用返回时的 trace
+                    libc::ptrace(libc::PTRACE_SYSCALL, pid, 0, 0);
+                    libc::waitpid(pid, &mut status, 0);
+
+                    // 通过 /proc/pid/status 读取内存占用
+                    let status_file = format!("/proc/{}/status", pid);
+                    debug!("{}", status_file);
+                    let file = match File::open(status_file) {
+                        Ok(val) => val,
+                        Err(_) => {
+                            return judge_error(format!(
+                                "open file `{}` failure!",
+                                format!("/proc/{}/status", pid)
+                            ))
+                        }
+                    };
+                    let reader = BufReader::new(file);
+                    let mut vm_data = 0;
+                    let mut vm_stk = 0;
+                    for line in reader.lines() {
+                        let s = match line {
+                            Ok(val) => val,
+                            Err(_) => return judge_error("readline failure!".to_string()),
+                        };
+                        if s.starts_with("VmData") {
+                            let len = s.len() - 2;
+                            let mem = &s[7..len].trim();
+                            let mem = match mem.parse::<i64>() {
+                                Ok(val) => val,
+                                Err(_) => return judge_error(format!("parse {} failure!", mem)),
+                            };
+                            if vm_data < mem {
+                                vm_data = mem;
+                            }
+                            debug!("vm_data: {}", vm_data);
+                        } else if s.starts_with("VmStk") {
+                            let len = s.len() - 2;
+                            let mem = &s[6..len].trim();
+                            let mem = match mem.parse::<i64>() {
+                                Ok(val) => val,
+                                Err(_) => return judge_error(format!("parse {} failure!", mem)),
+                            };
+                            if vm_stk < mem {
+                                vm_stk = mem;
+                            }
+                            debug!("vm_stk: {}", vm_stk);
+                        }
+                    }
+                    if vm_mem < vm_stk + vm_data {
+                        vm_mem = vm_stk + vm_data;
+                    }
+                    debug!("vm_mem: {}", vm_mem);
+
+                    // 控制子进程恢复执行
+                    libc::ptrace(libc::PTRACE_CONT, pid, 0, 0);
+                }
+                // out call
+                // 等待子进程结束
+                if libc::wait4(pid, &mut status, 0, &mut rusage) < 0 || libc::WIFEXITED(status) {
+                    debug!("exited: {}", libc::WIFEXITED(status));
+                    break;
+                }
+                debug!("exited: {}", libc::WIFEXITED(status));
             }
         }
 
@@ -259,13 +360,15 @@ impl Runner {
             + i64::from(rusage.ru_utime.tv_usec) / 1000
             + rusage.ru_stime.tv_sec * 1000
             + i64::from(rusage.ru_stime.tv_usec) / 1000;
-        let memory_used = rusage.ru_maxrss;
+
+        let memory_used = if self.traceme {
+            vm_mem
+        } else {
+            rusage.ru_maxrss
+        };
         let real_time_used = match start.elapsed() {
             Ok(elapsed) => elapsed.as_millis(),
-            // 这种地方如果出错了，确实没有办法解决
-            // 只能崩溃再见了
-            // How dare you!
-            Err(_) => panic!("How dare you!"),
+            Err(_) => return judge_error("real time elapsed failure!".to_string()),
         };
         return RunnerStatus {
             rusage: rusage,
@@ -275,6 +378,43 @@ impl Runner {
             time_used: time_used,
             memory_used: memory_used,
             real_time_used: real_time_used,
+            errmsg: "".to_string(),
         };
+    }
+}
+
+fn judge_error(errmsg: String) -> RunnerStatus {
+    RunnerStatus {
+        rusage: libc::rusage {
+            ru_utime: libc::timeval {
+                tv_sec: 0 as libc::time_t,
+                tv_usec: 0 as libc::suseconds_t,
+            },
+            ru_stime: libc::timeval {
+                tv_sec: 0 as libc::time_t,
+                tv_usec: 0 as libc::suseconds_t,
+            },
+            ru_maxrss: 0 as libc::c_long,
+            ru_ixrss: 0 as libc::c_long,
+            ru_idrss: 0 as libc::c_long,
+            ru_isrss: 0 as libc::c_long,
+            ru_minflt: 0 as libc::c_long,
+            ru_majflt: 0 as libc::c_long,
+            ru_nswap: 0 as libc::c_long,
+            ru_inblock: 0 as libc::c_long,
+            ru_oublock: 0 as libc::c_long,
+            ru_msgsnd: 0 as libc::c_long,
+            ru_msgrcv: 0 as libc::c_long,
+            ru_nsignals: 0 as libc::c_long,
+            ru_nvcsw: 0 as libc::c_long,
+            ru_nivcsw: 0 as libc::c_long,
+        },
+        exit_code: -1,
+        status: -1,
+        signal: -1,
+        time_used: -1,
+        memory_used: -1,
+        real_time_used: 0,
+        errmsg: errmsg,
     }
 }

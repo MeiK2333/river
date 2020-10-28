@@ -26,6 +26,7 @@ pub enum Error {
     OpenFileError(PathBuf, io::Error),
     ReadFileError(PathBuf, io::Error),
     CustomError(String),
+    JudgeThreadError(String),
 }
 
 pub type Result<T> = result::Result<T, Error>;
