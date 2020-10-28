@@ -1,7 +1,7 @@
 use super::error::Result;
 use crate::river::JudgeResult;
 
-pub fn stanard_result(out: &[u8], ans: &[u8]) -> Result<JudgeResult> {
+pub fn standard_result(out: &[u8], ans: &[u8]) -> Result<JudgeResult> {
     let out_len = out.len();
     let ans_len = ans.len();
     let mut out_offset = 0;
@@ -143,20 +143,20 @@ mod tests {
     fn test5() {
         let ans: &[u8] = "Hello World!".as_bytes();
         let out: &[u8] = "Hello World!".as_bytes();
-        assert_eq!(stanard_result(out, ans).unwrap(), JudgeResult::Accepted);
+        assert_eq!(standard_result(out, ans).unwrap(), JudgeResult::Accepted);
     }
 
     #[test]
     fn test6() {
         let ans: &[u8] = "Hello World!".as_bytes();
         let out: &[u8] = "Hello World!   ".as_bytes();
-        assert_eq!(stanard_result(out, ans).unwrap(), JudgeResult::Accepted);
+        assert_eq!(standard_result(out, ans).unwrap(), JudgeResult::Accepted);
     }
 
     #[test]
     fn test7() {
         let ans: &[u8] = "Hello World!  \n\n\n\n  \n\n\n\n".as_bytes();
         let out: &[u8] = "Hello World!\t\t\t\t\n\n\n\n    \n\n\n\n\t\t\t\t".as_bytes();
-        assert_eq!(stanard_result(out, ans).unwrap(), JudgeResult::Accepted);
+        assert_eq!(standard_result(out, ans).unwrap(), JudgeResult::Accepted);
     }
 }

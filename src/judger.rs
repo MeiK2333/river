@@ -2,7 +2,7 @@ use super::config::{STDERR_FILENAME, STDOUT_FILENAME};
 use super::error::{Error, Result};
 use super::process::Process;
 use super::runner::RunnerStatus;
-use crate::result::stanard_result;
+use crate::result::standard_result;
 use crate::river::judge_response::State;
 use crate::river::Language;
 use crate::river::{CompileData, JudgeData, JudgeResult, JudgeStatus};
@@ -88,7 +88,7 @@ pub async fn judger(
         if let Err(e) = file.read_to_end(&mut out).await {
             return Err(Error::ReadFileError(path.join(STDOUT_FILENAME), e));
         };
-        let result = stanard_result(&out, &data.out_data)?;
+        let result = standard_result(&out, &data.out_data)?;
         resp.state = Some(State::Result(result as i32));
     }
     Ok(resp)
