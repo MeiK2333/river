@@ -37,7 +37,7 @@ RUN curl -sL https://deb.nodesource.com/setup_14.x | bash - && \
     apt install -y nodejs
 
 # install go
-RUN add-apt-repository -y ppa:gophers/archive && \
+RUN add-apt-repository ppa:longsleep/golang-backports && \
     apt install golang-go
 
 # TODO: install other languages
