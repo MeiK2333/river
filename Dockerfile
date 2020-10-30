@@ -50,4 +50,4 @@ WORKDIR /river
 
 COPY --from=builder /river/target/release/river /river/
 
-CMD [ "river" ]
+CMD [ "/river/river" ]
