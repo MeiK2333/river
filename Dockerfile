@@ -12,20 +12,17 @@ FROM ubuntu:18.04
 
 ENV LANG C.UTF-8
 
-RUN apt update
+RUN apt update -y
 
 # install gcc g++
 RUN apt install -y \
     g++ \
-    gcc \
-    libc6-dev \
-    make \
-    pkg-config
+    gcc
 
-# install python3.6
+# install python3.8
 RUN apt install -y software-properties-common && \
     add-apt-repository -y ppa:deadsnakes/ppa && \
-    apt install python3.6
+    apt install -y python3.8
 
 # install rust
 RUN apt install -y curl && \
@@ -37,8 +34,11 @@ RUN curl -sL https://deb.nodesource.com/setup_14.x | bash - && \
     apt install -y nodejs
 
 # install go
-RUN add-apt-repository ppa:longsleep/golang-backports && \
+RUN add-apt-repository -y ppa:longsleep/golang-backports && \
     apt install -y golang-go
+
+# install openjdk
+RUN apt install -y default-jdk
 
 # TODO: install other languages
 
