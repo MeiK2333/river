@@ -39,7 +39,7 @@ pub async fn judger(
     let cmd = match Language::from_i32(request.language) {
         Some(Language::C) => "./a.out",
         Some(Language::Cpp) => "./a.out",
-        Some(Language::Python) => "/usr/bin/python3 main.py",
+        Some(Language::Python) => "/usr/bin/python3.8 main.py",
         Some(Language::Rust) => "./a.out",
         Some(Language::Node) => "node main.js",
         Some(Language::TypeScript) => "node main.js",
@@ -119,9 +119,9 @@ pub async fn compile(
     let cmd = match Language::from_i32(request.language) {
         Some(Language::C) => "/usr/bin/gcc main.c -o a.out -Wall -O2 -std=c99 --static",
         Some(Language::Cpp) => "/usr/bin/g++ main.cpp -O2 -Wall --static -o a.out --std=gnu++17",
-        Some(Language::Python) => "/usr/bin/python3 -m compileall main.py",
-        Some(Language::Rust) => "/usr/bin/rustc main.rs -o a.out -C opt-level=2",
-        Some(Language::Node) => "validate.js main.js",
+        Some(Language::Python) => "/usr/bin/python3.8 -m compileall main.py",
+        Some(Language::Rust) => "/root/.cargo/bin/rustc main.rs -o a.out -C opt-level=2",
+        Some(Language::Node) => "/usr/bin/node /plugins/js/validate.js main.js",
         Some(Language::TypeScript) => "/usr/bin/tsc main.ts",
         Some(Language::Go) => "/usr/bin/go build -ldflags \"-s -w\" main.go",
         None => return Err(Error::LanguageNotFound(request.language)),

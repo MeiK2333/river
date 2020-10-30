@@ -15,9 +15,7 @@ ENV LANG C.UTF-8
 RUN apt update -y
 
 # install gcc g++
-RUN apt install -y \
-    g++ \
-    gcc
+RUN apt install -y gcc g++
 
 # install python3.8
 RUN apt install -y software-properties-common && \
