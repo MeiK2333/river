@@ -109,7 +109,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     env_logger::init_from_env(env);
 
-    let addr = "127.0.0.1:4003".parse()?;
+    let addr = "0.0.0.0:4003".parse()?;
     let river = RiverService::default();
 
     info!("listen on: {}", addr);

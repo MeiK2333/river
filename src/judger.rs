@@ -44,6 +44,7 @@ pub async fn judger(
         Some(Language::Node) => "node main.js",
         Some(Language::TypeScript) => "node main.js",
         Some(Language::Go) => "./a.out",
+        Some(Language::Java) => "Main.java",
         None => return Err(Error::LanguageNotFound(request.language)),
     };
     let process = Process::new(
@@ -109,6 +110,7 @@ pub async fn compile(
         Some(Language::Node) => "main.js",
         Some(Language::TypeScript) => "main.ts",
         Some(Language::Go) => "main.go",
+        Some(Language::Java) => "Main.java",
         None => return Err(Error::LanguageNotFound(request.language)),
     };
     if let Err(e) = fs::write(path.join(filename), &data.code).await {
@@ -124,6 +126,7 @@ pub async fn compile(
         Some(Language::Node) => "/usr/bin/node /plugins/js/validate.js main.js",
         Some(Language::TypeScript) => "/usr/bin/tsc main.ts",
         Some(Language::Go) => "/usr/bin/go build -ldflags \"-s -w\" main.go",
+        Some(Language::Java) => "/usr/bin/java -cp . Main",
         None => return Err(Error::LanguageNotFound(request.language)),
     };
     debug!("build command: {}", cmd);

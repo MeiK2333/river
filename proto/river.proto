@@ -24,6 +24,7 @@ enum Language {
   Node = 4;
   TypeScript = 5;
   Go = 6;
+  Java = 7;
 }
 
 enum JudgeType {

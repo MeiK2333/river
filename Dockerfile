@@ -20,7 +20,7 @@ RUN apt install -y gcc g++
 # install python3.8
 RUN apt install -y software-properties-common && \
     add-apt-repository -y ppa:deadsnakes/ppa && \
-    apt install -y python3.8
+    apt install -y python3.8 python3-pip
 
 # install rust
 RUN apt install -y curl && \
