@@ -158,7 +158,7 @@ pub async fn compile(
         };
         resp.state = Some(State::Result(JudgeResult::CompileError as i32));
     } else {
-        resp.state = Some(State::Result(JudgeResult::Accepted as i32));
+        resp.state = Some(State::Result(JudgeResult::CompileSuccess as i32));
     }
     Ok(resp)
 }

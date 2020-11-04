@@ -52,6 +52,7 @@ enum JudgeResult {
   CompileError = 6;
   PresentationError = 7;
   SystemError = 8;
+  CompileSuccess = 9;
 }
 
 enum JudgeStatus {

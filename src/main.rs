@@ -87,7 +87,7 @@ impl River for RiverService {
                 // 如果通过了编译，则标记为成功
                 if let Some(Data::CompileData(_)) = &req.data {
                     if let Some(State::Result(rst)) = result.state {
-                        if rst == JudgeResult::Accepted as i32 {
+                        if rst == JudgeResult::CompileSuccess as i32 {
                             compile_success = true;
                         }
                     }
