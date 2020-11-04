@@ -20,7 +20,7 @@ DESCRIPTOR = _descriptor.FileDescriptor(
   syntax='proto3',
   serialized_options=None,
   create_key=_descriptor._internal_create_key,
-  serialized_pb=b'\n\x0briver.proto\x12\x05river\"\x1b\n\x0b\x43ompileData\x12\x0c\n\x04\x63ode\x18\x01 \x01(\x0c\"X\n\tJudgeData\x12\x0f\n\x07in_data\x18\x01 \x01(\x0c\x12\x10\n\x08out_data\x18\x02 \x01(\x0c\x12\x12\n\ntime_limit\x18\x03 \x01(\x05\x12\x14\n\x0cmemory_limit\x18\x04 \x01(\x05\"\xb3\x01\n\x0cJudgeRequest\x12!\n\x08language\x18\x01 \x01(\x0e\x32\x0f.river.Language\x12$\n\njudge_type\x18\x02 \x01(\x0e\x32\x10.river.JudgeType\x12*\n\x0c\x63ompile_data\x18\x03 \x01(\x0b\x32\x12.river.CompileDataH\x00\x12&\n\njudge_data\x18\x04 \x01(\x0b\x32\x10.river.JudgeDataH\x00\x42\x06\n\x04\x64\x61ta\"\xbc\x01\n\rJudgeResponse\x12\x11\n\ttime_used\x18\x01 \x01(\x03\x12\x13\n\x0bmemory_used\x18\x02 \x01(\x03\x12$\n\x06result\x18\x03 \x01(\x0e\x32\x12.river.JudgeResultH\x00\x12$\n\x06status\x18\t \x01(\x0e\x32\x12.river.JudgeStatusH\x00\x12\x0e\n\x06stdout\x18\x06 \x01(\t\x12\x0e\n\x06stderr\x18\x07 \x01(\t\x12\x0e\n\x06\x65rrmsg\x18\x08 \x01(\tB\x07\n\x05state*R\n\x08Language\x12\x05\n\x01\x43\x10\x00\x12\x07\n\x03\x43pp\x10\x01\x12\n\n\x06Python\x10\x02\x12\x08\n\x04Rust\x10\x03\x12\x08\n\x04Node\x10\x04\x12\x0e\n\nTypeScript\x10\x05\x12\x06\n\x02Go\x10\x06*\x19\n\tJudgeType\x12\x0c\n\x08Standard\x10\x00*\xc1\x01\n\x0bJudgeResult\x12\x0c\n\x08\x41\x63\x63\x65pted\x10\x00\x12\x0f\n\x0bWrongAnswer\x10\x01\x12\x15\n\x11TimeLimitExceeded\x10\x02\x12\x17\n\x13MemoryLimitExceeded\x10\x03\x12\x10\n\x0cRuntimeError\x10\x04\x12\x17\n\x13OutputLimitExceeded\x10\x05\x12\x10\n\x0c\x43ompileError\x10\x06\x12\x15\n\x11PresentationError\x10\x07\x12\x0f\n\x0bSystemError\x10\x08*2\n\x0bJudgeStatus\x12\x0b\n\x07Pending\x10\x00\x12\x0b\n\x07Running\x10\x01\x12\t\n\x05\x45nded\x10\x02\x32\x41\n\x05River\x12\x38\n\x05Judge\x12\x13.river.JudgeRequest\x1a\x14.river.JudgeResponse\"\x00(\x01\x30\x01\x62\x06proto3'
+  serialized_pb=b'\n\x0briver.proto\x12\x05river\"\x1b\n\x0b\x43ompileData\x12\x0c\n\x04\x63ode\x18\x01 \x01(\x0c\"X\n\tJudgeData\x12\x0f\n\x07in_data\x18\x01 \x01(\x0c\x12\x10\n\x08out_data\x18\x02 \x01(\x0c\x12\x12\n\ntime_limit\x18\x03 \x01(\x05\x12\x14\n\x0cmemory_limit\x18\x04 \x01(\x05\"\xb3\x01\n\x0cJudgeRequest\x12!\n\x08language\x18\x01 \x01(\x0e\x32\x0f.river.Language\x12$\n\njudge_type\x18\x02 \x01(\x0e\x32\x10.river.JudgeType\x12*\n\x0c\x63ompile_data\x18\x03 \x01(\x0b\x32\x12.river.CompileDataH\x00\x12&\n\njudge_data\x18\x04 \x01(\x0b\x32\x10.river.JudgeDataH\x00\x42\x06\n\x04\x64\x61ta\"\xbc\x01\n\rJudgeResponse\x12\x11\n\ttime_used\x18\x01 \x01(\x03\x12\x13\n\x0bmemory_used\x18\x02 \x01(\x03\x12$\n\x06result\x18\x03 \x01(\x0e\x32\x12.river.JudgeResultH\x00\x12$\n\x06status\x18\t \x01(\x0e\x32\x12.river.JudgeStatusH\x00\x12\x0e\n\x06stdout\x18\x06 \x01(\t\x12\x0e\n\x06stderr\x18\x07 \x01(\t\x12\x0e\n\x06\x65rrmsg\x18\x08 \x01(\tB\x07\n\x05state*\\\n\x08Language\x12\x05\n\x01\x43\x10\x00\x12\x07\n\x03\x43pp\x10\x01\x12\n\n\x06Python\x10\x02\x12\x08\n\x04Rust\x10\x03\x12\x08\n\x04Node\x10\x04\x12\x0e\n\nTypeScript\x10\x05\x12\x06\n\x02Go\x10\x06\x12\x08\n\x04Java\x10\x07*\x19\n\tJudgeType\x12\x0c\n\x08Standard\x10\x00*\xd5\x01\n\x0bJudgeResult\x12\x0c\n\x08\x41\x63\x63\x65pted\x10\x00\x12\x0f\n\x0bWrongAnswer\x10\x01\x12\x15\n\x11TimeLimitExceeded\x10\x02\x12\x17\n\x13MemoryLimitExceeded\x10\x03\x12\x10\n\x0cRuntimeError\x10\x04\x12\x17\n\x13OutputLimitExceeded\x10\x05\x12\x10\n\x0c\x43ompileError\x10\x06\x12\x15\n\x11PresentationError\x10\x07\x12\x0f\n\x0bSystemError\x10\x08\x12\x12\n\x0e\x43ompileSuccess\x10\t*2\n\x0bJudgeStatus\x12\x0b\n\x07Pending\x10\x00\x12\x0b\n\x07Running\x10\x01\x12\t\n\x05\x45nded\x10\x02\x32\x41\n\x05River\x12\x38\n\x05Judge\x12\x13.river.JudgeRequest\x1a\x14.river.JudgeResponse\"\x00(\x01\x30\x01\x62\x06proto3'
 )
 
 _LANGUAGE = _descriptor.EnumDescriptor(
@@ -65,11 +65,16 @@ _LANGUAGE = _descriptor.EnumDescriptor(
       serialized_options=None,
       type=None,
       create_key=_descriptor._internal_create_key),
+    _descriptor.EnumValueDescriptor(
+      name='Java', index=7, number=7,
+      serialized_options=None,
+      type=None,
+      create_key=_descriptor._internal_create_key),
   ],
   containing_type=None,
   serialized_options=None,
   serialized_start=514,
-  serialized_end=596,
+  serialized_end=606,
 )
 _sym_db.RegisterEnumDescriptor(_LANGUAGE)
 
@@ -89,8 +94,8 @@ _JUDGETYPE = _descriptor.EnumDescriptor(
   ],
   containing_type=None,
   serialized_options=None,
-  serialized_start=598,
-  serialized_end=623,
+  serialized_start=608,
+  serialized_end=633,
 )
 _sym_db.RegisterEnumDescriptor(_JUDGETYPE)
 
@@ -147,11 +152,16 @@ _JUDGERESULT = _descriptor.EnumDescriptor(
       serialized_options=None,
       type=None,
       create_key=_descriptor._internal_create_key),
+    _descriptor.EnumValueDescriptor(
+      name='CompileSuccess', index=9, number=9,
+      serialized_options=None,
+      type=None,
+      create_key=_descriptor._internal_create_key),
   ],
   containing_type=None,
   serialized_options=None,
-  serialized_start=626,
-  serialized_end=819,
+  serialized_start=636,
+  serialized_end=849,
 )
 _sym_db.RegisterEnumDescriptor(_JUDGERESULT)
 
@@ -181,8 +191,8 @@ _JUDGESTATUS = _descriptor.EnumDescriptor(
   ],
   containing_type=None,
   serialized_options=None,
-  serialized_start=821,
-  serialized_end=871,
+  serialized_start=851,
+  serialized_end=901,
 )
 _sym_db.RegisterEnumDescriptor(_JUDGESTATUS)
 
@@ -194,6 +204,7 @@ Rust = 3
 Node = 4
 TypeScript = 5
 Go = 6
+Java = 7
 Standard = 0
 Accepted = 0
 WrongAnswer = 1
@@ -204,6 +215,7 @@ OutputLimitExceeded = 5
 CompileError = 6
 PresentationError = 7
 SystemError = 8
+CompileSuccess = 9
 Pending = 0
 Running = 1
 Ended = 2
@@ -496,8 +508,8 @@ _RIVER = _descriptor.ServiceDescriptor(
   index=0,
   serialized_options=None,
   create_key=_descriptor._internal_create_key,
-  serialized_start=873,
-  serialized_end=938,
+  serialized_start=903,
+  serialized_end=968,
   methods=[
   _descriptor.MethodDescriptor(
     name='Judge',

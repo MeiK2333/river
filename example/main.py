@@ -11,6 +11,8 @@ def judge(path, language):
         filename = "main.c"
     elif language == river_pb2.Cpp:
         filename = "main.cpp"
+    elif language == river_pb2.Python:
+        filename = "main.py"
     with open(path.joinpath(filename), "rb") as fr:
         code = fr.read()
     with open(path.joinpath("in.txt"), "rb") as fr:
@@ -44,6 +46,11 @@ def run():
         for path in Path("cpp").iterdir():
             print(f"开始评测 {path}")
             for item in stub.Judge(judge(path, river_pb2.Cpp)):
+                print(item)
+            print(f"{path} 评测完成")
+        for path in Path("py").iterdir():
+            print(f"开始评测 {path}")
+            for item in stub.Judge(judge(path, river_pb2.Python)):
                 print(item)
             print(f"{path} 评测完成")
 

@@ -156,6 +156,9 @@ pub async fn compile(
             Ok(val) => val,
             Err(e) => return Err(Error::FileReadError(e)),
         };
+        debug!("stdout: {}", resp.stdout);
+        debug!("stderr: {}", resp.stderr);
+        debug!("errmsg: {}", status.errmsg);
         resp.state = Some(State::Result(JudgeResult::CompileError as i32));
     } else {
         resp.state = Some(State::Result(JudgeResult::CompileSuccess as i32));
