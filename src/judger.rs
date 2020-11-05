@@ -152,6 +152,10 @@ pub async fn compile(
     if request.language == Language::Java as i32 {
         runner.memory_limit = -1;
     }
+    if request.language == Language::Rust as i32 {
+        // https://github.com/rust-lang/rust/issues/46345
+        runner.memory_limit = -1;
+    }
     let status = runner.await?;
     resp.set_process_status(&status);
     if status.exit_code != 0 || status.signal != 0 {

@@ -15,6 +15,8 @@ def judge(path, language):
         filename = "main.py"
     elif language == river_pb2.Java:
         filename = "Main.java"
+    elif language == river_pb2.Rust:
+        filename = "main.rs"
     with open(path.joinpath(filename), "rb") as fr:
         code = fr.read()
     with open(path.joinpath("in.txt"), "rb") as fr:
@@ -27,9 +29,6 @@ def judge(path, language):
         judge_type=river_pb2.Standard,
         compile_data=river_pb2.CompileData(code=code),
     )
-    # if language == river_pb2.Java:
-    #     import time
-    #     time.sleep(1000)
     # judge
     yield river_pb2.JudgeRequest(
         language=language,
@@ -38,9 +37,6 @@ def judge(path, language):
             in_data=in_data, out_data=out_data, time_limit=10000, memory_limit=65535
         ),
     )
-    # if language == river_pb2.Java:
-    #     import time
-    #     time.sleep(1000)
 
 
 def run():
@@ -64,6 +60,11 @@ def run():
         for path in Path("py").iterdir():
             print(f"开始评测 {path}")
             for item in stub.Judge(judge(path, river_pb2.Python)):
+                print(item)
+            print(f"{path} 评测完成")
+        for path in Path("rust").iterdir():
+            print(f"开始评测 {path}")
+            for item in stub.Judge(judge(path, river_pb2.Rust)):
                 print(item)
             print(f"{path} 评测完成")
 
