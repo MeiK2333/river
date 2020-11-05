@@ -19,6 +19,8 @@ def judge(path, language):
         filename = "main.rs"
     elif language == river_pb2.Go:
         filename = "main.go"
+    elif language == river_pb2.Node:
+        filename = "main.js"
     with open(path.joinpath(filename), "rb") as fr:
         code = fr.read()
     with open(path.joinpath("in.txt"), "rb") as fr:
@@ -44,34 +46,39 @@ def judge(path, language):
 def run():
     with grpc.insecure_channel("localhost:4003") as channel:
         stub = river_pb2_grpc.RiverStub(channel)
-        for path in Path("java").iterdir():
+        # for path in Path("java").iterdir():
+        #     print(f"开始评测 {path}")
+        #     for item in stub.Judge(judge(path, river_pb2.Java)):
+        #         print(item)
+        #     print(f"{path} 评测完成")
+        # for path in Path("c").iterdir():
+        #     print(f"开始评测 {path}")
+        #     for item in stub.Judge(judge(path, river_pb2.C)):
+        #         print(item)
+        #     print(f"{path} 评测完成")
+        # for path in Path("cpp").iterdir():
+        #     print(f"开始评测 {path}")
+        #     for item in stub.Judge(judge(path, river_pb2.Cpp)):
+        #         print(item)
+        #     print(f"{path} 评测完成")
+        # for path in Path("py").iterdir():
+        #     print(f"开始评测 {path}")
+        #     for item in stub.Judge(judge(path, river_pb2.Python)):
+        #         print(item)
+        #     print(f"{path} 评测完成")
+        # for path in Path("rust").iterdir():
+        #     print(f"开始评测 {path}")
+        #     for item in stub.Judge(judge(path, river_pb2.Rust)):
+        #         print(item)
+        #     print(f"{path} 评测完成")
+        # for path in Path("go").iterdir():
+        #     print(f"开始评测 {path}")
+        #     for item in stub.Judge(judge(path, river_pb2.Go)):
+        #         print(item)
+        #     print(f"{path} 评测完成")
+        for path in Path("node").iterdir():
             print(f"开始评测 {path}")
-            for item in stub.Judge(judge(path, river_pb2.Java)):
-                print(item)
-            print(f"{path} 评测完成")
-        for path in Path("c").iterdir():
-            print(f"开始评测 {path}")
-            for item in stub.Judge(judge(path, river_pb2.C)):
-                print(item)
-            print(f"{path} 评测完成")
-        for path in Path("cpp").iterdir():
-            print(f"开始评测 {path}")
-            for item in stub.Judge(judge(path, river_pb2.Cpp)):
-                print(item)
-            print(f"{path} 评测完成")
-        for path in Path("py").iterdir():
-            print(f"开始评测 {path}")
-            for item in stub.Judge(judge(path, river_pb2.Python)):
-                print(item)
-            print(f"{path} 评测完成")
-        for path in Path("rust").iterdir():
-            print(f"开始评测 {path}")
-            for item in stub.Judge(judge(path, river_pb2.Rust)):
-                print(item)
-            print(f"{path} 评测完成")
-        for path in Path("go").iterdir():
-            print(f"开始评测 {path}")
-            for item in stub.Judge(judge(path, river_pb2.Go)):
+            for item in stub.Judge(judge(path, river_pb2.Node)):
                 print(item)
             print(f"{path} 评测完成")
 
