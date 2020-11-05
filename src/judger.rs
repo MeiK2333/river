@@ -41,7 +41,7 @@ pub async fn judger(
         Some(Language::Cpp) => "./a.out",
         Some(Language::Python) => "/usr/bin/python3.8 main.py",
         Some(Language::Rust) => "./a.out",
-        Some(Language::Node) => "node main.js",
+        Some(Language::Node) => "/usr/bin/node main.js",
         Some(Language::TypeScript) => "node main.js",
         Some(Language::Go) => "./a.out",
         Some(Language::Java) => "/usr/bin/java -cp . Main",
@@ -60,7 +60,10 @@ pub async fn judger(
     let mut runner = process.runner.clone();
     // 为 Java 虚拟机取消内存限制和 trace（万恶的 JVM）
     // 看起来虚拟机语言都有同样的问题
-    if request.language == Language::Java as i32 || request.language == Language::Go as i32 {
+    if request.language == Language::Java as i32
+        || request.language == Language::Go as i32
+        || request.language == Language::Node as i32
+    {
         runner.memory_limit = -1;
         runner.traceme = false;
     }
@@ -144,7 +147,7 @@ pub async fn compile(
         &v,
         // 编译的资源限制为固定的
         10000,
-        256 * 1024,
+        1024 * 1024,
     )?;
 
     let mut runner = process.runner.clone();
