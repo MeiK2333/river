@@ -8,7 +8,7 @@ pub fn standard_result(out: &[u8], ans: &[u8]) -> Result<JudgeResult> {
     let mut ans_offset = 0;
     // 没有 PE，PE 直接 WA
     let mut r = JudgeResult::Accepted;
-    while out_offset < out_len && ans_offset < ans_len {
+    while out_offset <= out_len && ans_offset <= ans_len {
         let (out_start, out_end, out_exists) = next_line(&out, out_offset, out_len);
         let (ans_start, ans_end, ans_exists) = next_line(&ans, ans_offset, ans_len);
         if !out_exists || !ans_exists {
@@ -157,6 +157,27 @@ mod tests {
     fn test7() {
         let ans: &[u8] = "Hello World!  \n\n\n\n  \n\n\n\n".as_bytes();
         let out: &[u8] = "Hello World!\t\t\t\t\n\n\n\n    \n\n\n\n\t\t\t\t".as_bytes();
+        assert_eq!(standard_result(out, ans).unwrap(), JudgeResult::Accepted);
+    }
+
+    #[test]
+    fn test8() {
+        let ans: &[u8] = "Hello World!".as_bytes();
+        let out: &[u8] = "".as_bytes();
+        assert_eq!(standard_result(out, ans).unwrap(), JudgeResult::WrongAnswer);
+    }
+    
+    #[test]
+    fn test9() {
+        let ans: &[u8] = "".as_bytes();
+        let out: &[u8] = "".as_bytes();
+        assert_eq!(standard_result(out, ans).unwrap(), JudgeResult::Accepted);
+    }
+
+    #[test]
+    fn test10() {
+        let ans: &[u8] = "Hello World!".as_bytes();
+        let out: &[u8] = "Hello World!\n".as_bytes();
         assert_eq!(standard_result(out, ans).unwrap(), JudgeResult::Accepted);
     }
 }

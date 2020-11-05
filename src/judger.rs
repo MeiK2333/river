@@ -44,7 +44,7 @@ pub async fn judger(
         Some(Language::Node) => "node main.js",
         Some(Language::TypeScript) => "node main.js",
         Some(Language::Go) => "./a.out",
-        Some(Language::Java) => "Main.java",
+        Some(Language::Java) => "/usr/bin/java -cp . Main",
         None => return Err(Error::LanguageNotFound(request.language)),
     };
     let process = Process::new(
@@ -54,9 +54,15 @@ pub async fn judger(
         data.time_limit,
         data.memory_limit,
     )?;
+    debug!("run command: {}", cmd);
 
     // 开始执行并等待返回结果
-    let runner = process.runner.clone();
+    let mut runner = process.runner.clone();
+    // 为 Java 虚拟机取消内存限制和 trace（万恶的 JVM）
+    if request.language == Language::Java as i32 {
+        runner.memory_limit = -1;
+        runner.traceme = false;
+    }
     let status = runner.await?;
 
     resp.set_process_status(&status);
@@ -126,7 +132,7 @@ pub async fn compile(
         Some(Language::Node) => "/usr/bin/node /plugins/js/validate.js main.js",
         Some(Language::TypeScript) => "/usr/bin/tsc main.ts",
         Some(Language::Go) => "/usr/bin/go build -ldflags \"-s -w\" main.go",
-        Some(Language::Java) => "/usr/bin/java -cp . Main",
+        Some(Language::Java) => "/usr/bin/javac Main.java",
         None => return Err(Error::LanguageNotFound(request.language)),
     };
     debug!("build command: {}", cmd);
@@ -142,6 +148,10 @@ pub async fn compile(
 
     let mut runner = process.runner.clone();
     runner.traceme = false;
+    // 为 Java 虚拟机取消内存限制（万恶的 JVM）
+    if request.language == Language::Java as i32 {
+        runner.memory_limit = -1;
+    }
     let status = runner.await?;
     resp.set_process_status(&status);
     if status.exit_code != 0 || status.signal != 0 {

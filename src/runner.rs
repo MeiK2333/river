@@ -1,22 +1,29 @@
+extern crate nix;
+
 use super::allow::{gen_rules, trace_syscall};
 use super::config::{STDERR_FILENAME, STDIN_FILENAME, STDOUT_FILENAME};
 use super::error::{errno_str, Error, Result};
 use super::exec_args::ExecArgs;
 use super::seccomp::*;
+use nix::unistd::close;
 use std::convert::TryInto;
 use std::env;
 use std::ffi::CString;
-use std::fs::File;
+use std::fs::{remove_file, File};
 use std::future::Future;
-use std::io::{self, prelude::*, BufReader};
-use std::path::PathBuf;
+use std::io;
+use std::os::unix::io::IntoRawFd;
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::ptr;
-use std::sync::mpsc;
-use std::sync::{Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex};
 use std::task::{Context, Poll};
 use std::thread;
 use std::time::SystemTime;
+
+extern "C" {
+    fn MemoryUsage(fd: i32) -> i64;
+}
 
 #[derive(Clone)]
 pub struct Runner {
@@ -161,12 +168,18 @@ impl Runner {
         unsafe {
             // 重定向文件描述符
             dup(STDIN_FILENAME, libc::STDIN_FILENO, libc::O_RDONLY, 0o644);
+            if Path::new(STDOUT_FILENAME).exists() {
+                remove_file(STDOUT_FILENAME).unwrap();
+            }
             dup(
                 STDOUT_FILENAME,
                 libc::STDOUT_FILENO,
                 libc::O_CREAT | libc::O_RDWR,
                 0o644,
             );
+            if Path::new(STDERR_FILENAME).exists() {
+                remove_file(STDERR_FILENAME).unwrap();
+            }
             dup(
                 STDERR_FILENAME,
                 libc::STDERR_FILENO,
@@ -180,7 +193,7 @@ impl Runner {
                 panic!("How dare you!");
             }
             // CPU 时间限制，粒度为 S
-            rl.rlim_cur = (self.time_limit / 1000 + 1) as u64;
+            rl.rlim_cur = (self.time_limit as u64) / 1000 + 1;
             rl.rlim_max = rl.rlim_cur + 1;
             if libc::setrlimit(libc::RLIMIT_CPU, &rl) != 0 {
                 eprintln!("setrlimit failure!");
@@ -188,17 +201,19 @@ impl Runner {
                 panic!("How dare you!");
             }
             // 设置内存限制
-            rl.rlim_cur = (self.memory_limit * 1024) as u64;
-            rl.rlim_max = rl.rlim_cur + 1024;
-            if libc::setrlimit(libc::RLIMIT_DATA, &rl) != 0 {
-                eprintln!("setrlimit failure!");
-                eprintln!("{:?}", io::Error::last_os_error().raw_os_error());
-                panic!("How dare you!");
-            }
-            if libc::setrlimit(libc::RLIMIT_AS, &rl) != 0 {
-                eprintln!("setrlimit failure!");
-                eprintln!("{:?}", io::Error::last_os_error().raw_os_error());
-                panic!("How dare you!");
+            if self.memory_limit > 0 {
+                rl.rlim_cur = (self.memory_limit as u64) * 1024;
+                rl.rlim_max = rl.rlim_cur + 1024;
+                if libc::setrlimit(libc::RLIMIT_DATA, &rl) != 0 {
+                    eprintln!("setrlimit failure!");
+                    eprintln!("{:?}", io::Error::last_os_error().raw_os_error());
+                    panic!("How dare you!");
+                }
+                if libc::setrlimit(libc::RLIMIT_AS, &rl) != 0 {
+                    eprintln!("setrlimit failure!");
+                    eprintln!("{:?}", io::Error::last_os_error().raw_os_error());
+                    panic!("How dare you!");
+                }
             }
             if self.traceme {
                 // 设置 trace 模式
@@ -229,6 +244,7 @@ impl Runner {
             }
             SeccompFilter::apply(filter.try_into().unwrap()).unwrap();
             libc::execve(exec_args.pathname, exec_args.argv, exec_args.envp);
+            libc::kill(libc::getpid(), libc::SIGKILL);
         }
         panic!("How dare you!");
     }
@@ -267,6 +283,17 @@ impl Runner {
         // from: https://www.hackerearth.com/practice/notes/vivekprakash/technical-diving-into-memory-used-by-a-program-in-online-judges/
         // VmRSS 为程序当前驻留在物理内存中的大小，对虚拟内存等无效
         let mut vm_mem = 0;
+        let status_file = format!("/proc/{}/status", pid);
+        let file = match File::open(status_file) {
+            Ok(val) => val,
+            Err(_) => {
+                return judge_error(format!(
+                    "open file `{}` failure!",
+                    format!("/proc/{}/status", pid)
+                ))
+            }
+        };
+        let status_fd = file.into_raw_fd();
 
         unsafe {
             if self.traceme {
@@ -283,52 +310,15 @@ impl Runner {
                     libc::ptrace(libc::PTRACE_SYSCALL, pid, 0, 0);
                     libc::waitpid(pid, &mut status, 0);
 
-                    // 通过 /proc/pid/status 读取内存占用
-                    let status_file = format!("/proc/{}/status", pid);
-                    debug!("{}", status_file);
-                    let file = match File::open(status_file) {
-                        Ok(val) => val,
-                        Err(_) => {
-                            return judge_error(format!(
-                                "open file `{}` failure!",
-                                format!("/proc/{}/status", pid)
-                            ))
-                        }
-                    };
-                    let reader = BufReader::new(file);
-                    let mut vm_data = 0;
-                    let mut vm_stk = 0;
-                    for line in reader.lines() {
-                        let s = match line {
-                            Ok(val) => val,
-                            Err(_) => return judge_error("readline failure!".to_string()),
-                        };
-                        if s.starts_with("VmData") {
-                            let len = s.len() - 2;
-                            let mem = &s[7..len].trim();
-                            let mem = match mem.parse::<i64>() {
-                                Ok(val) => val,
-                                Err(_) => return judge_error(format!("parse {} failure!", mem)),
-                            };
-                            if vm_data < mem {
-                                vm_data = mem;
-                            }
-                            debug!("vm_data: {}", vm_data);
-                        } else if s.starts_with("VmStk") {
-                            let len = s.len() - 2;
-                            let mem = &s[6..len].trim();
-                            let mem = match mem.parse::<i64>() {
-                                Ok(val) => val,
-                                Err(_) => return judge_error(format!("parse {} failure!", mem)),
-                            };
-                            if vm_stk < mem {
-                                vm_stk = mem;
-                            }
-                            debug!("vm_stk: {}", vm_stk);
-                        }
+                    let vmem = MemoryUsage(status_fd);
+                    if vm_mem < vmem {
+                        vm_mem = vmem;
                     }
-                    if vm_mem < vm_stk + vm_data {
-                        vm_mem = vm_stk + vm_data;
+                    // trace 模式下，如果检测到内存已经超出限制，则直接 kill & break
+                    if vm_mem > self.memory_limit.into() {
+                        debug!("MemoryLimitExceeded! break");
+                        libc::kill(pid, libc::SIGKILL);
+                        break;
                     }
                     debug!("vm_mem: {}", vm_mem);
 
@@ -341,23 +331,25 @@ impl Runner {
                     debug!("exited: {}", libc::WIFEXITED(status));
                     break;
                 }
-                debug!("exited: {}", libc::WIFEXITED(status));
+                // debug!("exited: {}", libc::WIFEXITED(status));
             }
         }
 
+        match close(status_fd) {
+            Ok(_) => {}
+            Err(_) => return judge_error("close status file failure!".to_string()),
+        };
         let mut exit_code = 0;
-        let exited = unsafe { libc::WIFEXITED(status) };
+        let exited = libc::WIFEXITED(status);
         if exited {
-            exit_code = unsafe { libc::WEXITSTATUS(status) };
+            exit_code = libc::WEXITSTATUS(status);
         }
-        let signal = unsafe {
-            if libc::WIFSIGNALED(status) {
-                libc::WTERMSIG(status)
-            } else if libc::WIFSTOPPED(status) {
-                libc::WSTOPSIG(status)
-            } else {
-                0
-            }
+        let signal = if libc::WIFSIGNALED(status) {
+            libc::WTERMSIG(status)
+        } else if libc::WIFSTOPPED(status) {
+            libc::WSTOPSIG(status)
+        } else {
+            0
         };
         // TODO: 添加 CGroup 的量度
         let time_used = rusage.ru_utime.tv_sec * 1000
