@@ -17,6 +17,8 @@ def judge(path, language):
         filename = "Main.java"
     elif language == river_pb2.Rust:
         filename = "main.rs"
+    elif language == river_pb2.Go:
+        filename = "main.go"
     with open(path.joinpath(filename), "rb") as fr:
         code = fr.read()
     with open(path.joinpath("in.txt"), "rb") as fr:
@@ -65,6 +67,11 @@ def run():
         for path in Path("rust").iterdir():
             print(f"开始评测 {path}")
             for item in stub.Judge(judge(path, river_pb2.Rust)):
+                print(item)
+            print(f"{path} 评测完成")
+        for path in Path("go").iterdir():
+            print(f"开始评测 {path}")
+            for item in stub.Judge(judge(path, river_pb2.Go)):
                 print(item)
             print(f"{path} 评测完成")
 
