@@ -42,7 +42,7 @@ pub async fn judger(
         Some(Language::Python) => "/usr/bin/python3.8 main.py",
         Some(Language::Rust) => "./a.out",
         Some(Language::Node) => "/usr/bin/node main.js",
-        Some(Language::TypeScript) => "node main.js",
+        Some(Language::TypeScript) => "/usr/bin/node main.js",
         Some(Language::Go) => "./a.out",
         Some(Language::Java) => "/usr/bin/java -cp . Main",
         None => return Err(Error::LanguageNotFound(request.language)),

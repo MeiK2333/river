@@ -39,6 +39,12 @@ RUN add-apt-repository -y ppa:longsleep/golang-backports && \
 RUN apt install -y default-jdk
 
 # TODO: install other languages
+# TODO: C#
+# TODO: Ruby
+# TODO: PHP
+# TODO: Lisp
+# TODO: Kotlin
+# TODO: Haskell
 
 RUN rm -rf /var/lib/apt/lists/*
 
