@@ -63,6 +63,7 @@ pub async fn judger(
     if request.language == Language::Java as i32
         || request.language == Language::Go as i32
         || request.language == Language::Node as i32
+        || request.language == Language::TypeScript as i32
     {
         runner.memory_limit = -1;
         runner.traceme = false;

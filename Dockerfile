@@ -1,12 +1,12 @@
 FROM rust:latest as builder
 
+RUN rustup component add rustfmt --toolchain 1.47.0-x86_64-unknown-linux-gnu
+
 COPY . /river
 
 WORKDIR /river
 
-RUN rustup component add rustfmt --toolchain 1.47.0-x86_64-unknown-linux-gnu && \
-    cargo build --release
-
+RUN cargo build --release
 
 FROM ubuntu:18.04
 
