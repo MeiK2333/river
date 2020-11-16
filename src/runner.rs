@@ -294,6 +294,8 @@ impl Runner {
             }
         };
         let status_fd = file.into_raw_fd();
+        let child_proc_str = format!("/proc/{}", pid);
+        let child_proc = Path::new(&child_proc_str);
 
         unsafe {
             if self.traceme {
@@ -320,13 +322,16 @@ impl Runner {
                         libc::kill(pid, libc::SIGKILL);
                         break;
                     }
-                    debug!("vm_mem: {}", vm_mem);
+                    // debug!("vm_mem: {}", vm_mem);
 
                     // 控制子进程恢复执行
                     libc::ptrace(libc::PTRACE_CONT, pid, 0, 0);
                 }
                 // out call
                 // 等待子进程结束
+                if !child_proc.exists() {
+                    return judge_error("Process exited abnormally".to_string());
+                }
                 if libc::wait4(pid, &mut status, 0, &mut rusage) < 0 || libc::WIFEXITED(status) {
                     debug!("exited: {}", libc::WIFEXITED(status));
                     break;

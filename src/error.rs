@@ -57,6 +57,7 @@ impl fmt::Display for Error {
 }
 
 pub fn system_error(err: Error) -> JudgeResponse {
+    warn!("{:?}", err);
     JudgeResponse {
         time_used: 0,
         memory_used: 0,
