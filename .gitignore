@@ -14,3 +14,5 @@ Cargo.lock
 .devcontainer
 
 nohup.out
+
+languages.yaml

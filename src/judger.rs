@@ -1,4 +1,4 @@
-use super::config::{STDERR_FILENAME, STDOUT_FILENAME};
+use super::config::{LANGUAGES, STDERR_FILENAME, STDOUT_FILENAME};
 use super::error::{Error, Result};
 use super::process::Process;
 use super::runner::RunnerStatus;
@@ -35,26 +35,18 @@ pub async fn judger(
     path: &Path,
 ) -> Result<JudgeResponse> {
     let mut resp = JudgeResponse::new();
-    // TODO: 使用配置文件
-    let cmd = match Language::from_i32(request.language) {
-        Some(Language::C) => "./a.out",
-        Some(Language::Cpp) => "./a.out",
-        Some(Language::Python) => "/usr/bin/python3.8 main.py",
-        Some(Language::Rust) => "./a.out",
-        Some(Language::Node) => "/usr/bin/node main.js",
-        Some(Language::TypeScript) => "/usr/bin/node main.js",
-        Some(Language::Go) => "./a.out",
-        Some(Language::Java) => "/usr/bin/java -cp . Main",
+    let conf = match LANGUAGES.get(&request.language) {
+        Some(c) => c,
         None => return Err(Error::LanguageNotFound(request.language)),
     };
     let process = Process::new(
-        cmd.to_string(),
+        conf.run_cmd.to_string(),
         path.to_path_buf(),
         &data.in_data,
         data.time_limit,
         data.memory_limit,
     )?;
-    debug!("run command: {}", cmd);
+    debug!("run command: {}", conf.run_cmd);
 
     // 开始执行并等待返回结果
     let mut runner = process.runner.clone();
@@ -112,38 +104,19 @@ pub async fn compile(
     path: &Path,
 ) -> Result<JudgeResponse> {
     let mut resp = JudgeResponse::new();
-    // 写入代码
-    let filename = match Language::from_i32(request.language) {
-        Some(Language::C) => "main.c",
-        Some(Language::Cpp) => "main.cpp",
-        Some(Language::Python) => "main.py",
-        Some(Language::Rust) => "main.rs",
-        Some(Language::Node) => "main.js",
-        Some(Language::TypeScript) => "main.ts",
-        Some(Language::Go) => "main.go",
-        Some(Language::Java) => "Main.java",
+    let conf = match LANGUAGES.get(&request.language) {
+        Some(c) => c,
         None => return Err(Error::LanguageNotFound(request.language)),
     };
-    if let Err(e) = fs::write(path.join(filename), &data.code).await {
+    // 写入代码
+    if let Err(e) = fs::write(path.join(&conf.code_file), &data.code).await {
         return Err(Error::FileWriteError(e));
     };
 
-    // TODO: 使用配置文件
-    let cmd = match Language::from_i32(request.language) {
-        Some(Language::C) => "/usr/bin/gcc main.c -o a.out -Wall -O2 -std=c99 --static",
-        Some(Language::Cpp) => "/usr/bin/g++ main.cpp -O2 -Wall --static -o a.out --std=gnu++17",
-        Some(Language::Python) => "/usr/bin/python3.8 -m compileall main.py",
-        Some(Language::Rust) => "/root/.cargo/bin/rustc main.rs -o a.out -C opt-level=2",
-        Some(Language::Node) => "/usr/bin/node /plugins/js/validate.js main.js",
-        Some(Language::TypeScript) => "/usr/bin/tsc main.ts",
-        Some(Language::Go) => "/usr/bin/go build -o a.out main.go",
-        Some(Language::Java) => "/usr/bin/javac Main.java",
-        None => return Err(Error::LanguageNotFound(request.language)),
-    };
-    debug!("build command: {}", cmd);
+    debug!("build command: {}", conf.compile_cmd);
     let v = vec![];
     let process = Process::new(
-        cmd.to_string(),
+        conf.compile_cmd.to_string(),
         path.to_path_buf(),
         &v,
         // 编译的资源限制为固定的
