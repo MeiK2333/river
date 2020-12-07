@@ -1,8 +1,0 @@
-*.pyc
-venv/
-__pycache__/
-*.out
-*.class
-package.json
-package-lock.json
-node_modules

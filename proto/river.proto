@@ -2,29 +2,33 @@ syntax = "proto3";
 package river;
 
 service River {
+  rpc Upload(UploadFile) returns (UploadState) {}
   rpc Judge(stream JudgeRequest) returns (stream JudgeResponse) {}
 }
 
+message UploadFile {
+  string filepath = 1;
+  bytes data = 2;
+}
+
+message UploadState {
+  oneof state {
+    string filepath = 1;
+    string errmsg = 2;
+  }
+}
+
 message CompileData {
-  bytes code = 1;
+  string language = 1;
+  string code = 2;
 }
 
 message JudgeData {
-  bytes in_data = 1;
-  bytes out_data = 2;
+  string in_file = 1;
+  string out_file = 2;
   int32 time_limit = 3;
   int32 memory_limit = 4;
-}
-
-enum Language {
-  C = 0;
-  Cpp = 1;
-  Python = 2;
-  Rust = 3;
-  Node = 4;
-  TypeScript = 5;
-  Go = 6;
-  Java = 7;
+  JudgeType judge_type = 5;
 }
 
 enum JudgeType {
@@ -33,16 +37,13 @@ enum JudgeType {
 }
 
 message JudgeRequest {
-  Language language = 1;
-  JudgeType judge_type = 2;
-
   oneof data {
-    CompileData compile_data = 3;
-    JudgeData judge_data = 4;
+    CompileData compile_data = 1;
+    JudgeData judge_data = 2;
   }
 }
 
-enum JudgeResult {
+enum JudgeResultEnum {
   Accepted = 0;
   WrongAnswer = 1;
   TimeLimitExceeded = 2;
@@ -61,16 +62,16 @@ enum JudgeStatus {
   Ended = 2;
 }
 
-message JudgeResponse {
+message JudgeResult {
   int64 time_used = 1;
   int64 memory_used = 2;
+  JudgeResultEnum result = 3;
+  string errmsg = 4;
+}
+
+message JudgeResponse {
   oneof state {
-    JudgeResult result = 3;
-    JudgeStatus status = 9;
+    JudgeResult result = 1;
+    JudgeStatus status = 2;
   }
-  // int32 errno = 4;
-  // int32 exit_code = 5;
-  string stdout = 6;
-  string stderr = 7;
-  string errmsg = 8;
 }
