@@ -16,20 +16,17 @@ Python:
   run_cmd: /usr/bin/python3.8 main.py
 
 Rust:
-  # compile_cmd: /root/.cargo/bin/rustc main.rs -o a.out -C opt-level=2
-  compile_cmd: /home/MeiK/.cargo/bin/rustc main.rs -o a.out -C opt-level=2
+  compile_cmd: /root/.cargo/bin/rustc main.rs -o a.out -C opt-level=2
   code_file: main.rs
   run_cmd: ./a.out
 
 Node:
-  # compile_cmd: /usr/bin/node /plugins/js/validate.js main.js
-  compile_cmd: /home/MeiK/.nvm/versions/node/v13.12.0/bin/node /home/MeiK/river/plugins/js/validate.js main.js
+  compile_cmd: /usr/bin/node /plugins/js/validate.js main.js
   code_file: main.js
   run_cmd: /home/MeiK/.nvm/versions/node/v13.12.0/bin/node main.js
 
 TypeScript:
-  # compile_cmd: /usr/bin/tsc main.ts
-  compile_cmd: /home/MeiK/.nvm/versions/node/v13.12.0/bin/tsc main.ts
+  compile_cmd: /usr/bin/tsc main.ts
   code_file: main.ts
   run_cmd: /home/MeiK/.nvm/versions/node/v13.12.0/bin/node main.js
 
