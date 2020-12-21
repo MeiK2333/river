@@ -5,14 +5,12 @@ extern crate log;
 use env_logger::Env;
 use futures_core::Stream;
 use river::river_server::{River, RiverServer};
-use river::{JudgeRequest, JudgeResponse, UploadFile, UploadState};
-use std::path::Path;
+use river::{JudgeRequest, JudgeResponse};
 use std::pin::Pin;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 
 mod error;
-mod file;
 
 pub mod river {
     tonic::include_proto!("river");
@@ -25,28 +23,6 @@ pub struct RiverService {}
 impl River for RiverService {
     type JudgeStream =
         Pin<Box<dyn Stream<Item = Result<JudgeResponse, Status>> + Send + Sync + 'static>>;
-
-    // 上传文件接口
-    async fn upload(&self, request: Request<UploadFile>) -> Result<Response<UploadState>, Status> {
-        let upload_file = request.into_inner();
-
-        // 文件放在 judger/data/ 目录下
-        let prefix_path = Path::new("judger/data/");
-        let path = prefix_path.join(&upload_file.filepath);
-
-        let result = file::extract(&path, &upload_file.data);
-        let state = match result {
-            Ok(_) => river::UploadState {
-                state: Some(river::upload_state::State::Filepath(
-                    upload_file.filepath.to_string(),
-                )),
-            },
-            Err(e) => river::UploadState {
-                state: Some(river::upload_state::State::Errmsg(format!("{}", e))),
-            },
-        };
-        Ok(Response::new(state))
-    }
 
     async fn judge(
         &self,

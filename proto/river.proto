@@ -2,20 +2,7 @@ syntax = "proto3";
 package river;
 
 service River {
-  rpc Upload(UploadFile) returns (UploadState) {}
   rpc Judge(stream JudgeRequest) returns (stream JudgeResponse) {}
-}
-
-message UploadFile {
-  string filepath = 1;
-  bytes data = 2;
-}
-
-message UploadState {
-  oneof state {
-    string filepath = 1;
-    string errmsg = 2;
-  }
 }
 
 message CompileData {

@@ -1,0 +1,6 @@
+data_dir: /data
+languages:
+  C:
+    compile_cmd: /usr/bin/gcc main.c -o a.out -Wall -O2 -std=c99 --static
+    code_file: main.c
+    run_cmd: ./a.out
