@@ -1,0 +1,182 @@
+use crate::exec_args::ExecArgs;
+use libc;
+use std::ffi::CString;
+use std::future::Future;
+use std::path::PathBuf;
+use std::pin::Pin;
+use std::ptr;
+use std::sync::{mpsc, Arc, Mutex};
+use std::task::{Context, Poll};
+use std::thread;
+
+#[cfg(test)]
+use std::println as debug;
+
+const STACK_SIZE: usize = 1024 * 1024;
+
+#[derive(Clone)]
+struct Process {
+  pub cmd: String,
+  pub time_limit: i32,
+  pub memory_limit: i32,
+  pub workdir: PathBuf,
+}
+
+#[derive(Clone)]
+struct RunnerStatus {
+  pub rusage: libc::rusage,
+  pub exit_code: i32,
+  pub status: i32,
+  pub signal: i32,
+  pub time_used: i64,
+  pub memory_used: i64,
+  pub real_time_used: u128,
+  pub errmsg: String,
+}
+
+impl Process {
+  pub fn new(cmd: String, time_limit: i32, memory_limit: i32, workdir: PathBuf) -> Process {
+    let runner = Process {
+      cmd: cmd,
+      time_limit: time_limit,
+      memory_limit: memory_limit,
+      workdir: workdir,
+    };
+    runner
+  }
+}
+
+struct Runner {
+  process: Process,
+  pid: i32,
+  tx: Arc<Mutex<mpsc::Sender<RunnerStatus>>>,
+  rx: Arc<Mutex<mpsc::Receiver<RunnerStatus>>>,
+  stack: *mut libc::c_void,
+}
+
+impl Runner {
+  pub fn from(process: Process) -> Runner {
+    let (tx, rx) = mpsc::channel();
+    let stack = unsafe {
+      libc::mmap(
+        ptr::null_mut(),
+        STACK_SIZE,
+        libc::PROT_READ | libc::PROT_WRITE,
+        libc::MAP_PRIVATE | libc::MAP_ANONYMOUS | libc::MAP_STACK,
+        -1,
+        0,
+      )
+    };
+    Runner {
+      process: process,
+      pid: -1,
+      tx: Arc::new(Mutex::new(tx)),
+      rx: Arc::new(Mutex::new(rx)),
+      stack: stack,
+    }
+  }
+}
+
+impl Drop for Runner {
+  fn drop(&mut self) {
+    debug!("dropping");
+    unsafe {
+      libc::munmap(self.stack, STACK_SIZE);
+
+      let mut status = 0;
+      let pid = libc::waitpid(self.pid, &mut status, libc::WNOHANG);
+
+      // > 0: 对应子进程退出但未回收资源
+      // = 0: 对应子进程存在但未退出
+      // 如果在运行过程中上层异常中断，则需要 kill 子进程并回收资源
+      if pid >= 0 {
+        libc::kill(self.pid, 9);
+        libc::waitpid(self.pid, &mut status, 0);
+      }
+    }
+  }
+}
+
+impl Future for Runner {
+  type Output = i32;
+
+  fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<i32> {
+    let runner = Pin::into_inner(self);
+    // 如果 pid == -1，则说明子进程还没有运行
+    if runner.pid == -1 {
+      let waker = cx.waker().clone();
+      let pid = unsafe {
+        libc::clone(
+          runit,
+          (runner.stack as usize + STACK_SIZE) as *mut libc::c_void,
+          libc::SIGCHLD
+        | libc::CLONE_NEWUTS  // 设置新的 UTS 名称空间（主机名、网络名等）
+        | libc::CLONE_NEWNET  // 设置新的网络空间，如果没有配置网络，则该沙盒内部将无法联网
+        | libc::CLONE_NEWNS  // 为沙盒内部设置新的 namespaces 空间
+        | libc::CLONE_NEWIPC  // IPC 隔离
+        | libc::CLONE_NEWCGROUP  // 在新的 CGROUP 中创建沙盒
+        | libc::CLONE_NEWPID, // 外部进程对沙盒不可见
+          &mut runner.process as *mut _ as *mut libc::c_void,
+        )
+      };
+      debug!("pid = {}", pid);
+      runner.pid = pid;
+
+      // 因为 wait 会阻塞等待结果，因此此处使用 thread::spawn 来 wait，以防止主流程被阻塞
+      thread::spawn(move || {
+        Runner::waitpid(pid);
+        // 子流程运行结束后通知主流程
+        debug!("waker");
+        waker.wake();
+      });
+      return Poll::Pending;
+    } else {
+      return Poll::Ready(0);
+    }
+  }
+}
+
+impl Runner {
+  fn waitpid(pid: i32) {
+    unsafe {
+      let mut status: i32 = 0;
+      // TODO: 获取运行状态等并传递给主流程
+      libc::wait4(pid, &mut status, 0, ptr::null_mut());
+    }
+  }
+}
+
+extern "C" fn runit(process: *mut libc::c_void) -> i32 {
+  let process = unsafe { &mut *(process as *mut Process) };
+  debug!("cmd = {}", process.cmd);
+  let exec_args = ExecArgs::build(&process.cmd).unwrap();
+  unsafe {
+    // TODO: 安全机制
+    // 设置主机名
+    libc::sethostname(CString::new("river").unwrap().as_ptr(), 5);
+    libc::setdomainname(CString::new("river").unwrap().as_ptr(), 5);
+
+    // 因为运行是在隔离的环境内，原有的环境变量已经没啥用了，因此这里直接传 null
+    libc::execve(exec_args.pathname, exec_args.argv, ptr::null_mut());
+    // 理论上并不会到这里，因此如果到这里，直接 kill 掉
+    libc::kill(libc::getpid(), libc::SIGKILL);
+  }
+  0
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use std::path::Path;
+  #[tokio::test]
+  async fn test1() {
+    let process = Process::new(
+      String::from("/bin/echo Hello World!"),
+      1000,
+      65535,
+      Path::new("./").to_path_buf(),
+    );
+    let result = Runner::from(process).await;
+    assert_eq!(result, 0);
+  }
+}

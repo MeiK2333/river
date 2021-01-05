@@ -10,7 +10,10 @@ use std::pin::Pin;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 
+mod config;
 mod error;
+mod exec_args;
+mod process;
 
 pub mod river {
     tonic::include_proto!("river");

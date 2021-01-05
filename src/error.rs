@@ -2,16 +2,16 @@
 
 use libc::strerror;
 use std::ffi::CStr;
+use std::ffi::NulError;
 use std::fmt;
 use std::io;
 use std::result;
-use zip;
 
 #[allow(dead_code)]
 #[derive(Debug)]
 pub enum Error {
     IOError(io::Error),
-    ZipError(zip::result::ZipError),
+    StringToCStringError(NulError),
 }
 
 pub type Result<T> = result::Result<T, Error>;
