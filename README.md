@@ -6,6 +6,4 @@
 
 ## TODO
 
-- namespaces
 - cgroup
-- seccomp

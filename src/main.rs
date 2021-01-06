@@ -14,6 +14,7 @@ mod config;
 mod error;
 mod exec_args;
 mod process;
+mod seccomp;
 
 pub mod river {
     tonic::include_proto!("river");

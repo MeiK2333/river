@@ -1,8 +1,14 @@
+use crate::config::{STDERR_FILENAME, STDIN_FILENAME, STDOUT_FILENAME};
+use crate::error::errno_str;
 use crate::exec_args::ExecArgs;
+use crate::seccomp;
 use libc;
+use std::convert::TryInto;
 use std::ffi::CString;
+use std::fs::remove_file;
 use std::future::Future;
-use std::path::PathBuf;
+use std::io;
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::ptr;
 use std::sync::{mpsc, Arc, Mutex};
@@ -13,6 +19,21 @@ use std::thread;
 use std::println as debug;
 
 const STACK_SIZE: usize = 1024 * 1024;
+
+macro_rules! syscall_or_panic {
+  ($expression:expr) => {
+    if $expression < 0 {
+      let err = io::Error::last_os_error().raw_os_error();
+      panic!(errno_str(err));
+    };
+  };
+}
+
+macro_rules! c_str_ptr {
+  ($expression:expr) => {
+    CString::new($expression).unwrap().as_ptr()
+  };
+}
 
 #[derive(Clone)]
 struct Process {
@@ -151,30 +172,193 @@ extern "C" fn runit(process: *mut libc::c_void) -> i32 {
   debug!("cmd = {}", process.cmd);
   let exec_args = ExecArgs::build(&process.cmd).unwrap();
   unsafe {
-    // TODO: 安全机制
-    // 设置主机名
-    libc::sethostname(CString::new("river").unwrap().as_ptr(), 5);
-    libc::setdomainname(CString::new("river").unwrap().as_ptr(), 5);
-
-    // 因为运行是在隔离的环境内，原有的环境变量已经没啥用了，因此这里直接传 null
-    libc::execve(exec_args.pathname, exec_args.argv, ptr::null_mut());
+    security(&process);
+    fd_dup();
+    syscall_or_panic!(libc::execve(
+      exec_args.pathname,
+      exec_args.argv,
+      // 因为运行是在隔离的环境内，原有的环境变量已经没啥用了，因此这里直接传 null
+      ptr::null_mut()
+    ));
     // 理论上并不会到这里，因此如果到这里，直接 kill 掉
-    libc::kill(libc::getpid(), libc::SIGKILL);
+    syscall_or_panic!(libc::kill(libc::getpid(), libc::SIGKILL));
   }
   0
+}
+
+/// 为评测沙盒提供安全保障
+///
+/// 包括以下策略：
+///
+/// - `mount` 隔离运行目录，安全的将内部数据传递出去
+/// - `chdir` && `chroot`，将评测沙盒与宿主机的文件系统隔离
+/// - `sethostname` && `setdomainname`，不暴露真实机器名
+/// - `setgid` && `setuid`，修改运行用户为低权限的 `nobody`，配合文件权限，防止代码对沙盒内部进行恶意修改
+/// - `seccomp` 阻止执行危险的系统调用
+/// - `CLONE_NEWNET` 禁止沙盒内部连接网络
+/// - `CLONE_NEWPID` 隔离内外进程空间
+unsafe fn security(process: &Process) {
+  // 全局默认权限 755，为运行目录设置特权
+  syscall_or_panic!(libc::chmod(
+    c_str_ptr!(process.workdir.to_str().unwrap()),
+    0o777,
+  ));
+
+  // 等同于 mount --make-rprivate /
+  // 不将挂载传播到其他空间，以免造成挂载混淆
+  syscall_or_panic!(libc::mount(
+    c_str_ptr!(""),
+    c_str_ptr!("/"),
+    c_str_ptr!(""),
+    libc::MS_PRIVATE | libc::MS_REC,
+    ptr::null_mut()
+  ));
+
+  // 挂载运行文件夹，除此目录外程序没有其他目录的写权限
+  syscall_or_panic!(libc::mount(
+    c_str_ptr!(process.workdir.to_str().unwrap()),
+    c_str_ptr!("runtime/rootfs/tmp"),
+    c_str_ptr!("none"),
+    libc::MS_BIND | libc::MS_PRIVATE,
+    ptr::null_mut(),
+  ));
+
+  // chdir && chroot，隔离文件系统
+  syscall_or_panic!(libc::chdir(c_str_ptr!("runtime/rootfs")));
+  syscall_or_panic!(libc::chroot(c_str_ptr!(".")));
+  syscall_or_panic!(libc::chdir(c_str_ptr!("/tmp")));
+
+  // 设置主机名
+  syscall_or_panic!(libc::sethostname(c_str_ptr!("river"), 5));
+  syscall_or_panic!(libc::setdomainname(c_str_ptr!("river"), 5));
+
+  // 修改用户为 nobody
+  syscall_or_panic!(libc::setgid(65534));
+  syscall_or_panic!(libc::setuid(65534));
+
+  let filter = seccomp::SeccompFilter::new(
+    deny_syscalls().into_iter().collect(),
+    seccomp::SeccompAction::Allow,
+  )
+  .unwrap();
+  seccomp::SeccompFilter::apply(filter.try_into().unwrap()).unwrap();
+}
+
+/// 重定向 `stdin`、`stdout`、`stderr`
+unsafe fn fd_dup() {
+  // 重定向文件描述符
+  if Path::new(STDIN_FILENAME).exists() {
+    dup(STDIN_FILENAME, libc::STDIN_FILENO, libc::O_RDONLY, 0o644);
+  }
+  if Path::new(STDOUT_FILENAME).exists() {
+    remove_file(STDOUT_FILENAME).unwrap();
+  }
+  dup(
+    STDOUT_FILENAME,
+    libc::STDOUT_FILENO,
+    libc::O_CREAT | libc::O_RDWR,
+    0o644,
+  );
+  if Path::new(STDERR_FILENAME).exists() {
+    remove_file(STDERR_FILENAME).unwrap();
+  }
+  dup(
+    STDERR_FILENAME,
+    libc::STDERR_FILENO,
+    libc::O_CREAT | libc::O_RDWR,
+    0o644,
+  );
+}
+
+unsafe fn dup(filename: &str, to: libc::c_int, flag: libc::c_int, mode: libc::c_int) {
+  let filename_str = CString::new(filename).unwrap();
+  let filename = filename_str.as_ptr();
+  let fd = libc::open(filename, flag, mode);
+  if fd < 0 {
+    let err = io::Error::last_os_error().raw_os_error();
+    panic!(errno_str(err));
+  }
+  syscall_or_panic!(libc::dup2(fd, to));
+}
+
+/// 阻止危险的系统调用
+///
+/// 参照 Docker 文档 [significant-syscalls-blocked-by-the-default-profile](https://docs.docker.com/engine/security/seccomp/#significant-syscalls-blocked-by-the-default-profile) 一节
+fn deny_syscalls() -> Vec<seccomp::SyscallRuleSet> {
+  vec![
+    deny_syscall(libc::SYS_acct),
+    deny_syscall(libc::SYS_add_key),
+    deny_syscall(libc::SYS_bpf),
+    deny_syscall(libc::SYS_clock_adjtime),
+    deny_syscall(libc::SYS_clock_settime),
+    deny_syscall(libc::SYS_create_module),
+    deny_syscall(libc::SYS_delete_module),
+    deny_syscall(libc::SYS_finit_module),
+    deny_syscall(libc::SYS_get_kernel_syms),
+    deny_syscall(libc::SYS_get_mempolicy),
+    deny_syscall(libc::SYS_init_module),
+    deny_syscall(libc::SYS_ioperm),
+    deny_syscall(libc::SYS_iopl),
+    deny_syscall(libc::SYS_kcmp),
+    deny_syscall(libc::SYS_kexec_file_load),
+    deny_syscall(libc::SYS_kexec_load),
+    deny_syscall(libc::SYS_keyctl),
+    deny_syscall(libc::SYS_lookup_dcookie),
+    deny_syscall(libc::SYS_mbind),
+    deny_syscall(libc::SYS_mount),
+    deny_syscall(libc::SYS_move_pages),
+    deny_syscall(libc::SYS_name_to_handle_at),
+    deny_syscall(libc::SYS_nfsservctl),
+    deny_syscall(libc::SYS_open_by_handle_at),
+    deny_syscall(libc::SYS_perf_event_open),
+    deny_syscall(libc::SYS_personality),
+    deny_syscall(libc::SYS_pivot_root),
+    deny_syscall(libc::SYS_process_vm_readv),
+    deny_syscall(libc::SYS_process_vm_writev),
+    deny_syscall(libc::SYS_ptrace),
+    deny_syscall(libc::SYS_query_module),
+    deny_syscall(libc::SYS_quotactl),
+    deny_syscall(libc::SYS_reboot),
+    deny_syscall(libc::SYS_request_key),
+    deny_syscall(libc::SYS_set_mempolicy),
+    deny_syscall(libc::SYS_setns),
+    deny_syscall(libc::SYS_settimeofday),
+    deny_syscall(libc::SYS_swapon),
+    deny_syscall(libc::SYS_swapoff),
+    deny_syscall(libc::SYS_sysfs),
+    deny_syscall(libc::SYS__sysctl),
+    deny_syscall(libc::SYS_umount2),
+    deny_syscall(libc::SYS_unshare),
+    deny_syscall(libc::SYS_uselib),
+    deny_syscall(libc::SYS_userfaultfd),
+    deny_syscall(libc::SYS_ustat),
+  ]
+}
+
+#[inline(always)]
+fn deny_syscall(syscall_number: i64) -> seccomp::SyscallRuleSet {
+  (
+    syscall_number,
+    vec![seccomp::SeccompRule::new(
+      vec![],
+      seccomp::SeccompAction::Kill,
+    )],
+  )
 }
 
 #[cfg(test)]
 mod tests {
   use super::*;
-  use std::path::Path;
+  use tempfile::tempdir_in;
   #[tokio::test]
   async fn test1() {
+    let pwd = tempdir_in("/tmp").unwrap();
+    println!("{:?}", pwd);
     let process = Process::new(
       String::from("/bin/echo Hello World!"),
       1000,
       65535,
-      Path::new("./").to_path_buf(),
+      pwd.path().to_path_buf(),
     );
     let result = Runner::from(process).await;
     assert_eq!(result, 0);
