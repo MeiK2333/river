@@ -12,6 +12,8 @@ use tonic::{Request, Response, Status};
 
 mod config;
 mod error;
+
+mod cgroup;
 mod exec_args;
 mod process;
 mod seccomp;

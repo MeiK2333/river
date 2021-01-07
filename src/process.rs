@@ -1,5 +1,6 @@
+use crate::cgroup::CGroupSet;
 use crate::config::{STDERR_FILENAME, STDIN_FILENAME, STDOUT_FILENAME};
-use crate::error::errno_str;
+use crate::error::{errno_str, Result};
 use crate::exec_args::ExecArgs;
 use crate::seccomp;
 use libc;
@@ -14,6 +15,7 @@ use std::ptr;
 use std::sync::{mpsc, Arc, Mutex};
 use std::task::{Context, Poll};
 use std::thread;
+use std::time::SystemTime;
 
 #[cfg(test)]
 use std::println as debug;
@@ -73,10 +75,11 @@ struct Runner {
   tx: Arc<Mutex<mpsc::Sender<RunnerStatus>>>,
   rx: Arc<Mutex<mpsc::Receiver<RunnerStatus>>>,
   stack: *mut libc::c_void,
+  cgroup_set: CGroupSet,
 }
 
 impl Runner {
-  pub fn from(process: Process) -> Runner {
+  pub fn from(process: Process) -> Result<Runner> {
     let (tx, rx) = mpsc::channel();
     let stack = unsafe {
       libc::mmap(
@@ -88,13 +91,14 @@ impl Runner {
         0,
       )
     };
-    Runner {
+    Ok(Runner {
       process: process,
       pid: -1,
       tx: Arc::new(Mutex::new(tx)),
       rx: Arc::new(Mutex::new(rx)),
       stack: stack,
-    }
+      cgroup_set: CGroupSet::new()?,
+    })
   }
 }
 
@@ -119,9 +123,9 @@ impl Drop for Runner {
 }
 
 impl Future for Runner {
-  type Output = i32;
+  type Output = Result<RunnerStatus>;
 
-  fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<i32> {
+  fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<RunnerStatus>> {
     let runner = Pin::into_inner(self);
     // 如果 pid == -1，则说明子进程还没有运行
     if runner.pid == -1 {
@@ -142,27 +146,75 @@ impl Future for Runner {
       };
       debug!("pid = {}", pid);
       runner.pid = pid;
+      runner
+        .cgroup_set
+        .memory
+        .set(
+          "memory.limit_in_bytes",
+          &format!("{}", runner.process.memory_limit * 1024),
+        )
+        .unwrap();
+      runner.cgroup_set.apply(pid).unwrap();
+      let tx = runner.tx.clone();
 
       // 因为 wait 会阻塞等待结果，因此此处使用 thread::spawn 来 wait，以防止主流程被阻塞
       thread::spawn(move || {
-        Runner::waitpid(pid);
+        let status = Runner::waitpid(pid);
         // 子流程运行结束后通知主流程
+        let status_tx = tx.lock().unwrap();
+        status_tx.send(status).unwrap();
         debug!("waker");
         waker.wake();
       });
       return Poll::Pending;
     } else {
-      return Poll::Ready(0);
+      let status = runner.rx.lock().unwrap().recv().unwrap();
+      return Poll::Ready(Ok(status));
     }
   }
 }
 
 impl Runner {
-  fn waitpid(pid: i32) {
+  fn waitpid(pid: i32) -> RunnerStatus {
+    let mut status: i32 = 0;
+    let mut rusage = new_rusage();
+    let start = SystemTime::now();
     unsafe {
-      let mut status: i32 = 0;
-      // TODO: 获取运行状态等并传递给主流程
-      libc::wait4(pid, &mut status, 0, ptr::null_mut());
+      if libc::wait4(pid, &mut status, 0, &mut rusage) < 0 {
+        return judge_system_error(String::from("wait4 failure!"));
+      }
+    }
+    let real_time_used = match start.elapsed() {
+      Ok(elapsed) => elapsed.as_millis(),
+      Err(_) => return judge_system_error(String::from("real time elapsed failure!")),
+    };
+    let mut exit_code = 0;
+    let exited = libc::WIFEXITED(status);
+    if exited {
+      exit_code = libc::WEXITSTATUS(status);
+    }
+    let signal = if libc::WIFSIGNALED(status) {
+      libc::WTERMSIG(status)
+    } else if libc::WIFSTOPPED(status) {
+      libc::WSTOPSIG(status)
+    } else {
+      0
+    };
+    let time_used = rusage.ru_utime.tv_sec * 1000
+      + i64::from(rusage.ru_utime.tv_usec) / 1000
+      + rusage.ru_stime.tv_sec * 1000
+      + i64::from(rusage.ru_stime.tv_usec) / 1000;
+    let memory_used = rusage.ru_maxrss;
+
+    RunnerStatus {
+      errmsg: String::from(""),
+      memory_used: memory_used,
+      time_used: time_used,
+      real_time_used: real_time_used,
+      exit_code: exit_code,
+      signal: signal,
+      status: status,
+      rusage: rusage,
     }
   }
 }
@@ -346,6 +398,52 @@ fn deny_syscall(syscall_number: i64) -> seccomp::SyscallRuleSet {
   )
 }
 
+/// 一个全为 `0` 的 `rusage`
+#[inline(always)]
+fn new_rusage() -> libc::rusage {
+  libc::rusage {
+    ru_utime: libc::timeval {
+      tv_sec: 0 as libc::time_t,
+      tv_usec: 0 as libc::suseconds_t,
+    },
+    ru_stime: libc::timeval {
+      tv_sec: 0 as libc::time_t,
+      tv_usec: 0 as libc::suseconds_t,
+    },
+    ru_maxrss: 0 as libc::c_long,
+    ru_ixrss: 0 as libc::c_long,
+    ru_idrss: 0 as libc::c_long,
+    ru_isrss: 0 as libc::c_long,
+    ru_minflt: 0 as libc::c_long,
+    ru_majflt: 0 as libc::c_long,
+    ru_nswap: 0 as libc::c_long,
+    ru_inblock: 0 as libc::c_long,
+    ru_oublock: 0 as libc::c_long,
+    ru_msgsnd: 0 as libc::c_long,
+    ru_msgrcv: 0 as libc::c_long,
+    ru_nsignals: 0 as libc::c_long,
+    ru_nvcsw: 0 as libc::c_long,
+    ru_nivcsw: 0 as libc::c_long,
+  }
+}
+
+/// 由于评测系统本身异常而产生的错误
+///
+/// 因为正常程序返回 `signal` 不能为负数，因此此处使用负数的 `signal` 标识系统错误
+#[inline(always)]
+fn judge_system_error(errmsg: String) -> RunnerStatus {
+  RunnerStatus {
+    rusage: new_rusage(),
+    exit_code: -1,
+    status: -1,
+    signal: -1,
+    time_used: -1,
+    memory_used: -1,
+    real_time_used: 0,
+    errmsg: errmsg,
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -360,7 +458,7 @@ mod tests {
       65535,
       pwd.path().to_path_buf(),
     );
-    let result = Runner::from(process).await;
-    assert_eq!(result, 0);
+    let result = Runner::from(process).unwrap().await.unwrap();
+    assert_eq!(result.exit_code, 0);
   }
 }
