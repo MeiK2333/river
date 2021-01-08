@@ -1,6 +1,6 @@
 use crate::error::{Error, Result};
-use std::fs::{read_to_string, remove_dir, OpenOptions};
-use std::io::Write;
+use std::fs;
+use std::fs::{read_to_string, remove_dir};
 use std::path::PathBuf;
 use tempfile::tempdir_in;
 
@@ -23,17 +23,13 @@ impl CGroupOptions {
   /// 将指定进程加入该 cgroup 组
   pub fn apply(&self, pid: i32) -> Result<()> {
     debug!("add {} to cgroup {:?}", pid, self.path);
-    self.set("tasks", &format!("{}", pid))
+    self.set("cgroup.procs", &format!("{}", pid))
   }
 
   /// e.g `set("memory.limit_in_bytes", "67108864")`
   pub fn set(&self, key: &str, value: &str) -> Result<()> {
     debug!("set {} values {}", key, value);
-    let mut file = try_io!(OpenOptions::new()
-      .write(true)
-      .append(true)
-      .open(self.path.join(key)));
-    let _ = writeln!(file, "{}", value);
+    try_io!(fs::write(self.path.join(key), value));
     Ok(())
   }
 

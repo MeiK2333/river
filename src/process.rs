@@ -122,6 +122,7 @@ impl Drop for Runner {
   }
 }
 
+// TODO: unwrap -> Result<Error>
 impl Future for Runner {
   type Output = Result<RunnerStatus>;
 
@@ -146,15 +147,17 @@ impl Future for Runner {
       };
       debug!("pid = {}", pid);
       runner.pid = pid;
+      // 设置 cgroup 限制
+      // 此处为父进程做的策略，所以没有与子进程的安全策略放一块
+      runner.cgroup_set.apply(pid).unwrap();
       runner
         .cgroup_set
         .memory
         .set(
           "memory.limit_in_bytes",
-          &format!("{}", runner.process.memory_limit * 1024),
+          &format!("{}", runner.process.memory_limit as i64 * 1024),
         )
         .unwrap();
-      runner.cgroup_set.apply(pid).unwrap();
       let tx = runner.tx.clone();
 
       // 因为 wait 会阻塞等待结果，因此此处使用 thread::spawn 来 wait，以防止主流程被阻塞
@@ -169,6 +172,17 @@ impl Future for Runner {
       return Poll::Pending;
     } else {
       let status = runner.rx.lock().unwrap().recv().unwrap();
+      // TODO: 将 CGroup 的结果合并到 status 中
+      let mem_used = runner
+        .cgroup_set
+        .memory
+        .get("memory.max_usage_in_bytes")
+        .unwrap()
+        .trim()
+        .parse::<i32>()
+        .unwrap();
+      debug!("cgroup memory used: {} KiB", mem_used / 1024);
+      debug!("rusage memory used: {} KiB", status.memory_used);
       return Poll::Ready(Ok(status));
     }
   }
@@ -225,7 +239,7 @@ extern "C" fn runit(process: *mut libc::c_void) -> i32 {
   let exec_args = ExecArgs::build(&process.cmd).unwrap();
   unsafe {
     security(&process);
-    fd_dup();
+    // fd_dup();
     syscall_or_panic!(libc::execve(
       exec_args.pathname,
       exec_args.argv,
