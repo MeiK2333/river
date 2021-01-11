@@ -1,6 +1,6 @@
 use crate::cgroup::CGroupSet;
 use crate::config::{STDERR_FILENAME, STDIN_FILENAME, STDOUT_FILENAME};
-use crate::error::{errno_str, Result};
+use crate::error::{errno_str, Error, Result};
 use crate::exec_args::ExecArgs;
 use crate::seccomp;
 use libc;
@@ -38,7 +38,7 @@ macro_rules! c_str_ptr {
 }
 
 #[derive(Clone)]
-struct Process {
+pub struct Process {
   pub cmd: String,
   pub time_limit: i32,
   pub memory_limit: i32,
@@ -46,14 +46,15 @@ struct Process {
 }
 
 #[derive(Clone)]
-struct RunnerStatus {
+pub struct RunnerStatus {
   pub rusage: libc::rusage,
   pub exit_code: i32,
   pub status: i32,
   pub signal: i32,
   pub time_used: i64,
-  pub memory_used: i64,
   pub real_time_used: u128,
+  pub memory_used: i64,
+  pub cgroup_memory_used: i64,
   pub errmsg: String,
 }
 
@@ -122,7 +123,6 @@ impl Drop for Runner {
   }
 }
 
-// TODO: unwrap -> Result<Error>
 impl Future for Runner {
   type Output = Result<RunnerStatus>;
 
@@ -150,14 +150,10 @@ impl Future for Runner {
       // 设置 cgroup 限制
       // 此处为父进程做的策略，所以没有与子进程的安全策略放一块
       runner.cgroup_set.apply(pid).unwrap();
-      runner
-        .cgroup_set
-        .memory
-        .set(
-          "memory.limit_in_bytes",
-          &format!("{}", runner.process.memory_limit as i64 * 1024),
-        )
-        .unwrap();
+      runner.cgroup_set.memory.set(
+        "memory.limit_in_bytes",
+        &format!("{}", runner.process.memory_limit as i64 * 1024),
+      )?;
       let tx = runner.tx.clone();
 
       // 因为 wait 会阻塞等待结果，因此此处使用 thread::spawn 来 wait，以防止主流程被阻塞
@@ -166,22 +162,25 @@ impl Future for Runner {
         // 子流程运行结束后通知主流程
         let status_tx = tx.lock().unwrap();
         status_tx.send(status).unwrap();
-        debug!("waker");
         waker.wake();
       });
       return Poll::Pending;
     } else {
-      let status = runner.rx.lock().unwrap().recv().unwrap();
-      // TODO: 将 CGroup 的结果合并到 status 中
-      let mem_used = runner
+      let mut status = runner.rx.lock().unwrap().recv().unwrap();
+      let mem_used = match runner
         .cgroup_set
         .memory
-        .get("memory.max_usage_in_bytes")
-        .unwrap()
+        .get("memory.max_usage_in_bytes")?
         .trim()
-        .parse::<i32>()
-        .unwrap();
-      debug!("cgroup memory used: {} KiB", mem_used / 1024);
+        .parse::<i64>()
+      {
+        Ok(val) => val,
+        Err(e) => return Poll::Ready(Err(Error::ParseIntError(e))),
+      };
+      status.cgroup_memory_used = mem_used / 1024;
+      debug!("cpu time used: {} ms", status.time_used);
+      debug!("real time used: {} ms", status.real_time_used);
+      debug!("cgroup memory used: {} KiB", status.cgroup_memory_used);
       debug!("rusage memory used: {} KiB", status.memory_used);
       return Poll::Ready(Ok(status));
     }
@@ -223,6 +222,7 @@ impl Runner {
     RunnerStatus {
       errmsg: String::from(""),
       memory_used: memory_used,
+      cgroup_memory_used: -1,
       time_used: time_used,
       real_time_used: real_time_used,
       exit_code: exit_code,
@@ -239,7 +239,7 @@ extern "C" fn runit(process: *mut libc::c_void) -> i32 {
   let exec_args = ExecArgs::build(&process.cmd).unwrap();
   unsafe {
     security(&process);
-    // fd_dup();
+    fd_dup();
     syscall_or_panic!(libc::execve(
       exec_args.pathname,
       exec_args.argv,
@@ -453,6 +453,7 @@ fn judge_system_error(errmsg: String) -> RunnerStatus {
     signal: -1,
     time_used: -1,
     memory_used: -1,
+    cgroup_memory_used: -1,
     real_time_used: 0,
     errmsg: errmsg,
   }
@@ -463,7 +464,7 @@ mod tests {
   use super::*;
   use tempfile::tempdir_in;
   #[tokio::test]
-  async fn test1() {
+  async fn test_echo() {
     let pwd = tempdir_in("/tmp").unwrap();
     println!("{:?}", pwd);
     let process = Process::new(
@@ -474,5 +475,36 @@ mod tests {
     );
     let result = Runner::from(process).unwrap().await.unwrap();
     assert_eq!(result.exit_code, 0);
+  }
+
+  #[tokio::test]
+  async fn test_sleep() {
+    let pwd = tempdir_in("/tmp").unwrap();
+    println!("{:?}", pwd);
+    let process = Process::new(
+      String::from("/bin/sleep 1"),
+      2000,
+      65535,
+      pwd.path().to_path_buf(),
+    );
+    let result = Runner::from(process).unwrap().await.unwrap();
+    assert!(result.real_time_used > 1000);
+    assert!(result.real_time_used < 1500);
+  }
+
+  #[tokio::test]
+  async fn test_output() {
+    let pwd = tempdir_in("/tmp").unwrap();
+    println!("{:?}", pwd);
+    let process = Process::new(
+      String::from("/bin/echo Hello World!"),
+      1000,
+      65535,
+      pwd.path().to_path_buf(),
+    );
+    let runner = Runner::from(process).unwrap();
+    let _ = runner.await.unwrap();
+    let out = std::fs::read_to_string(pwd.path().join(STDOUT_FILENAME)).unwrap();
+    assert_eq!(out, "Hello World!\n");
   }
 }
