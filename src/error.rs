@@ -13,6 +13,7 @@ pub enum Error {
   IOError(io::Error),
   StringToCStringError(NulError),
   ParseIntError(std::num::ParseIntError),
+  CreateTempDirError(io::Error),
 }
 
 pub type Result<T> = result::Result<T, Error>;
