@@ -14,6 +14,7 @@ pub enum Error {
     StringToCStringError(NulError),
     ParseIntError(std::num::ParseIntError),
     CreateTempDirError(io::Error),
+    CustomError(String),
 }
 
 pub type Result<T> = result::Result<T, Error>;
