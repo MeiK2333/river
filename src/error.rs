@@ -15,6 +15,7 @@ pub enum Error {
     ParseIntError(std::num::ParseIntError),
     CreateTempDirError(io::Error),
     CustomError(String),
+    LanguageNotFound(String),
 }
 
 pub type Result<T> = result::Result<T, Error>;
@@ -33,7 +34,9 @@ macro_rules! try_io {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Error::IOError(ref e) => write!(f, "IOError: {}", errno_str(e.raw_os_error())),
+            Error::IOError(ref e) => write!(f, "IOError: `{}`", errno_str(e.raw_os_error())),
+            Error::CustomError(ref e) => write!(f, "Internal Server Error: `{}`", e),
+            Error::LanguageNotFound(ref e) => write!(f, "Language Not Fount: `{}`", e),
             _ => write!(f, "{:?}", self),
         }
     }

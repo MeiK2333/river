@@ -7,7 +7,7 @@ use futures::StreamExt;
 use futures_core::Stream;
 use river::judge_request::Data;
 use river::river_server::{River, RiverServer};
-use river::{JudgeRequest, JudgeResponse};
+use river::{JudgeRequest, JudgeResponse, JudgeResultEnum};
 use std::pin::Pin;
 use tempfile::tempdir_in;
 use tonic::transport::Server;
@@ -42,58 +42,63 @@ impl River for RiverService {
         let mut stream = request.into_inner();
 
         let output = async_stream::try_stream! {
-            let pwd = match tempdir_in("/tmp") {
+            let pwd = match tempdir_in(&config::CONFIG.judge_dir) {
                 Ok(val) => val,
                 Err(e) => {
                     yield result::system_error(error::Error::IOError(e));
                     return;
                 }
             };
+            // 是否通过编译
+            let mut compile_success = false;
             while let Some(req) = stream.next().await {
+                yield result::pending();
+                // TODO: 限制并发数量
+                yield result::running();
                 let req = req?;
                 let mut language = String::from("");
                 let result = match &req.data {
                     Some(Data::CompileData(data)) => {
                         debug!("compile request");
+                        // 因为评测时还需要 language 的信息，因此此处进行复制保存
                         language = String::from(&data.language);
-                        let cfg = config::CONFIG.languages.get(&language);
-                        debug!("{:?}", cfg);
-                        let code = &data.code;
-                        judger::compile(&language, &code, &pwd.path()).await;
-                        JudgeResponse {
-                            state: Some(river::judge_response::State::Status(river::JudgeStatus::Pending as i32))
+                        let res = judger::compile(&language, &data.code, &pwd.path()).await;
+                        // 判断编译结果
+                        if let Ok(ref val) = res {
+                            if let Some(river::judge_response::State::Result(rst)) = &val.state {
+                                if rst.result == JudgeResultEnum::CompileSuccess as i32 {
+                                    // 标记编译成功
+                                    compile_success = true;
+                                }
+                            }
                         }
+                        res
                     },
                     Some(Data::JudgeData(data)) => {
                         debug!("judge request");
-                        let in_file = &data.in_file;
-                        let out_file = &data.out_file;
-                        let time_limit = data.time_limit;
-                        let memory_limit = data.memory_limit;
-                        let judge_type = data.judge_type;
-                        if language == "" {
-                            // error::Error::CustomError(String::from("not compiled"));
-                            JudgeResponse {
-                                state: Some(river::judge_response::State::Status(river::JudgeStatus::Pending as i32))
-                            }
+                        // 必须通过编译才能运行
+                        if language == "" || !compile_success {
+                            Err(error::Error::CustomError(String::from("not compiled")))
                         } else {
-                            judger::judge(&language, &in_file, &out_file, time_limit, memory_limit, judge_type, &pwd.path()).await;
-                            JudgeResponse {
-                                state: Some(river::judge_response::State::Status(river::JudgeStatus::Pending as i32))
-                            }
+                            judger::judge(
+                                &language,
+                                &data.in_file,
+                                &data.out_file,
+                                data.time_limit,
+                                data.memory_limit,
+                                data.judge_type,
+                                &pwd.path()
+                            ).await
                         }
                     },
-                    None => JudgeResponse {
-                        state: Some(river::judge_response::State::Status(river::JudgeStatus::Pending as i32))
-                    },
-                    _ => JudgeResponse {
-                        state: Some(river::judge_response::State::Status(river::JudgeStatus::Pending as i32))
-                    },
+                    None => Err(error::Error::CustomError(String::from("unrecognized request types"))),
+                    _ => Err(error::Error::CustomError(String::from("unrecognized request types"))),
                 };
-                // TODO
-                yield JudgeResponse {
-                    state: Some(river::judge_response::State::Status(river::JudgeStatus::Pending as i32))
+                let res = match result {
+                    Ok(res) => res,
+                    Err(e) => result::system_error(e)
                 };
+                yield res;
             };
         };
 

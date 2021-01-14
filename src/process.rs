@@ -70,34 +70,22 @@ impl Process {
     }
 }
 
-struct Runner {
+pub struct Runner {
     process: Process,
     pid: i32,
     tx: Arc<Mutex<mpsc::Sender<RunnerStatus>>>,
     rx: Arc<Mutex<mpsc::Receiver<RunnerStatus>>>,
-    stack: *mut libc::c_void,
     cgroup_set: CGroupSet,
 }
 
 impl Runner {
     pub fn from(process: Process) -> Result<Runner> {
         let (tx, rx) = mpsc::channel();
-        let stack = unsafe {
-            libc::mmap(
-                ptr::null_mut(),
-                STACK_SIZE,
-                libc::PROT_READ | libc::PROT_WRITE,
-                libc::MAP_PRIVATE | libc::MAP_ANONYMOUS | libc::MAP_STACK,
-                -1,
-                0,
-            )
-        };
         Ok(Runner {
             process: process,
             pid: -1,
             tx: Arc::new(Mutex::new(tx)),
             rx: Arc::new(Mutex::new(rx)),
-            stack: stack,
             cgroup_set: CGroupSet::new()?,
         })
     }
@@ -107,8 +95,6 @@ impl Drop for Runner {
     fn drop(&mut self) {
         debug!("dropping");
         unsafe {
-            libc::munmap(self.stack, STACK_SIZE);
-
             let mut status = 0;
             let pid = libc::waitpid(self.pid, &mut status, libc::WNOHANG);
 
@@ -128,20 +114,31 @@ impl Future for Runner {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<RunnerStatus>> {
         let runner = Pin::into_inner(self);
+        // 创建 clone 所需的栈空间
+        let stack = unsafe {
+            libc::mmap(
+                ptr::null_mut(),
+                STACK_SIZE,
+                libc::PROT_READ | libc::PROT_WRITE,
+                libc::MAP_PRIVATE | libc::MAP_ANONYMOUS | libc::MAP_STACK,
+                -1,
+                0,
+            )
+        };
         // 如果 pid == -1，则说明子进程还没有运行
         if runner.pid == -1 {
             let waker = cx.waker().clone();
             let pid = unsafe {
                 libc::clone(
                     runit,
-                    (runner.stack as usize + STACK_SIZE) as *mut libc::c_void,
+                    (stack as usize + STACK_SIZE) as *mut libc::c_void,
                     libc::SIGCHLD
-        | libc::CLONE_NEWUTS  // 设置新的 UTS 名称空间（主机名、网络名等）
-        | libc::CLONE_NEWNET  // 设置新的网络空间，如果没有配置网络，则该沙盒内部将无法联网
-        | libc::CLONE_NEWNS  // 为沙盒内部设置新的 namespaces 空间
-        | libc::CLONE_NEWIPC  // IPC 隔离
-        | libc::CLONE_NEWCGROUP  // 在新的 CGROUP 中创建沙盒
-        | libc::CLONE_NEWPID, // 外部进程对沙盒不可见
+                    | libc::CLONE_NEWUTS  // 设置新的 UTS 名称空间（主机名、网络名等）
+                    | libc::CLONE_NEWNET  // 设置新的网络空间，如果没有配置网络，则该沙盒内部将无法联网
+                    | libc::CLONE_NEWNS  // 为沙盒内部设置新的 namespaces 空间
+                    | libc::CLONE_NEWIPC  // IPC 隔离
+                    | libc::CLONE_NEWCGROUP  // 在新的 CGROUP 中创建沙盒
+                    | libc::CLONE_NEWPID, // 外部进程对沙盒不可见
                     &mut runner.process as *mut _ as *mut libc::c_void,
                 )
             };
@@ -166,6 +163,9 @@ impl Future for Runner {
             });
             return Poll::Pending;
         } else {
+            unsafe {
+                libc::munmap(stack, STACK_SIZE);
+            }
             let mut status = runner.rx.lock().unwrap().recv().unwrap();
             let mem_used = match runner
                 .cgroup_set
@@ -240,9 +240,11 @@ extern "C" fn runit(process: *mut libc::c_void) -> i32 {
     unsafe {
         security(&process);
         fd_dup();
+        // TODO: 资源限制，超时 kill 等
         syscall_or_panic!(libc::execve(
             exec_args.pathname,
             exec_args.argv,
+            // TODO: 传递自定义的环境变量
             // 因为运行是在隔离的环境内，原有的环境变量已经没啥用了，因此这里直接传 null
             ptr::null_mut()
         ));
