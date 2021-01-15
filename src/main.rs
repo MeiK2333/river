@@ -51,15 +51,14 @@ impl River for RiverService {
             };
             // 是否通过编译
             let mut compile_success = false;
+            let mut language = String::from("");
             while let Some(req) = stream.next().await {
                 yield result::pending();
                 // TODO: 限制并发数量
                 yield result::running();
                 let req = req?;
-                let mut language = String::from("");
                 let result = match &req.data {
                     Some(Data::CompileData(data)) => {
-                        debug!("compile request");
                         // 因为评测时还需要 language 的信息，因此此处进行复制保存
                         language = String::from(&data.language);
                         let res = judger::compile(&language, &data.code, &pwd.path()).await;
@@ -75,7 +74,6 @@ impl River for RiverService {
                         res
                     },
                     Some(Data::JudgeData(data)) => {
-                        debug!("judge request");
                         // 必须通过编译才能运行
                         if language == "" || !compile_success {
                             Err(error::Error::CustomError(String::from("not compiled")))

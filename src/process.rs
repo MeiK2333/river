@@ -149,7 +149,7 @@ impl Future for Runner {
             runner.cgroup_set.apply(pid).unwrap();
             runner.cgroup_set.memory.set(
                 "memory.limit_in_bytes",
-                &format!("{}", runner.process.memory_limit as i64 * 1024),
+                &format!("{}", runner.process.memory_limit as i64 * 1536), // 本来应该乘以 1024，此处略微放宽限制，从而让用户体验更好
             )?;
             let tx = runner.tx.clone();
 
@@ -182,6 +182,9 @@ impl Future for Runner {
             debug!("real time used: {} ms", status.real_time_used);
             debug!("cgroup memory used: {} KiB", status.cgroup_memory_used);
             debug!("rusage memory used: {} KiB", status.memory_used);
+            if status.signal < 0 {
+                return Poll::Ready(Err(Error::SystemError(status.errmsg)));
+            }
             return Poll::Ready(Ok(status));
         }
     }

@@ -4,9 +4,6 @@ use std::fs::{read_to_string, remove_dir};
 use std::path::PathBuf;
 use tempfile::tempdir_in;
 
-#[cfg(test)]
-use std::println as debug;
-
 pub struct CGroupOptions {
     path: PathBuf,
 }
@@ -14,7 +11,6 @@ pub struct CGroupOptions {
 impl CGroupOptions {
     pub fn new(base_path: &str) -> Result<CGroupOptions> {
         let pwd = try_io!(tempdir_in(base_path));
-        debug!("register cgroup {:?}", pwd);
         Ok(CGroupOptions {
             path: pwd.path().to_path_buf(),
         })
@@ -22,13 +18,11 @@ impl CGroupOptions {
 
     /// 将指定进程加入该 cgroup 组
     pub fn apply(&self, pid: i32) -> Result<()> {
-        debug!("add {} to cgroup {:?}", pid, self.path);
         self.set("cgroup.procs", &format!("{}", pid))
     }
 
     /// e.g `set("memory.limit_in_bytes", "67108864")`
     pub fn set(&self, key: &str, value: &str) -> Result<()> {
-        debug!("set {} values {}", key, value);
         try_io!(fs::write(self.path.join(key), value));
         Ok(())
     }
@@ -41,7 +35,6 @@ impl CGroupOptions {
 
 impl Drop for CGroupOptions {
     fn drop(&mut self) {
-        debug!("remove cgroup {:?}", self.path);
         remove_dir(&self.path).unwrap();
     }
 }

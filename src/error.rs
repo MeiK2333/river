@@ -16,6 +16,7 @@ pub enum Error {
     CreateTempDirError(io::Error),
     CustomError(String),
     LanguageNotFound(String),
+    SystemError(String),
 }
 
 pub type Result<T> = result::Result<T, Error>;
@@ -37,6 +38,7 @@ impl fmt::Display for Error {
             Error::IOError(ref e) => write!(f, "IOError: `{}`", errno_str(e.raw_os_error())),
             Error::CustomError(ref e) => write!(f, "Internal Server Error: `{}`", e),
             Error::LanguageNotFound(ref e) => write!(f, "Language Not Fount: `{}`", e),
+            Error::SystemError(ref e) => write!(f, "System Error: `{}`", e),
             _ => write!(f, "{:?}", self),
         }
     }
