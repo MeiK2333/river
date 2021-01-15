@@ -15,7 +15,7 @@ use std::ptr;
 use std::sync::{mpsc, Arc, Mutex};
 use std::task::{Context, Poll};
 use std::thread;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 #[cfg(test)]
 use std::println as debug;
@@ -91,20 +91,23 @@ impl Runner {
     }
 }
 
+unsafe fn killpid(pid: i32) {
+    let mut status = 0;
+
+    // > 0: 对应子进程退出但未回收资源
+    // = 0: 对应子进程存在但未退出
+    // 如果在运行过程中上层异常中断，则需要 kill 子进程并回收资源
+    if libc::waitpid(pid, &mut status, libc::WNOHANG) >= 0 {
+        libc::kill(pid, 9);
+        libc::waitpid(pid, &mut status, 0);
+    }
+}
+
 impl Drop for Runner {
     fn drop(&mut self) {
         debug!("dropping");
         unsafe {
-            let mut status = 0;
-            let pid = libc::waitpid(self.pid, &mut status, libc::WNOHANG);
-
-            // > 0: 对应子进程退出但未回收资源
-            // = 0: 对应子进程存在但未退出
-            // 如果在运行过程中上层异常中断，则需要 kill 子进程并回收资源
-            if pid >= 0 {
-                libc::kill(self.pid, 9);
-                libc::waitpid(self.pid, &mut status, 0);
-            }
+            killpid(self.pid);
         }
     }
 }
@@ -114,6 +117,7 @@ impl Future for Runner {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<RunnerStatus>> {
         let runner = Pin::into_inner(self);
+        let time_limit = (runner.process.time_limit / 1000 + 1) as u64 * 2;
         // 创建 clone 所需的栈空间
         let stack = unsafe {
             libc::mmap(
@@ -155,6 +159,14 @@ impl Future for Runner {
 
             // 因为 wait 会阻塞等待结果，因此此处使用 thread::spawn 来 wait，以防止主流程被阻塞
             thread::spawn(move || {
+                // 监控程序超时的任务
+                // 此限制相对宽松（sec * 2 + 2），尽可能在保证系统安全的前提下给评测最好的体验
+                thread::spawn(move || {
+                    thread::sleep(Duration::from_secs(time_limit));
+                    unsafe {
+                        killpid(pid);
+                    }
+                });
                 let status = Runner::waitpid(pid);
                 // 子流程运行结束后通知主流程
                 let status_tx = tx.lock().unwrap();
@@ -243,13 +255,10 @@ extern "C" fn runit(process: *mut libc::c_void) -> i32 {
     unsafe {
         security(&process);
         fd_dup();
-        // TODO: 资源限制，超时 kill 等
         syscall_or_panic!(libc::execve(
             exec_args.pathname,
             exec_args.argv,
-            // TODO: 传递自定义的环境变量
-            // 因为运行是在隔离的环境内，原有的环境变量已经没啥用了，因此这里直接传 null
-            ptr::null_mut()
+            exec_args.envp
         ));
         // 理论上并不会到这里，因此如果到这里，直接 kill 掉
         syscall_or_panic!(libc::kill(libc::getpid(), libc::SIGKILL));
@@ -471,7 +480,6 @@ mod tests {
     #[tokio::test]
     async fn test_echo() {
         let pwd = tempdir_in("/tmp").unwrap();
-        println!("{:?}", pwd);
         let process = Process::new(
             String::from("/bin/echo Hello World!"),
             1000,
@@ -485,7 +493,6 @@ mod tests {
     #[tokio::test]
     async fn test_sleep() {
         let pwd = tempdir_in("/tmp").unwrap();
-        println!("{:?}", pwd);
         let process = Process::new(
             String::from("/bin/sleep 1"),
             2000,
@@ -500,7 +507,6 @@ mod tests {
     #[tokio::test]
     async fn test_output() {
         let pwd = tempdir_in("/tmp").unwrap();
-        println!("{:?}", pwd);
         let process = Process::new(
             String::from("/bin/echo Hello World!"),
             1000,
@@ -511,5 +517,21 @@ mod tests {
         let _ = runner.await.unwrap();
         let out = std::fs::read_to_string(pwd.path().join(STDOUT_FILENAME)).unwrap();
         assert_eq!(out, "Hello World!\n");
+    }
+
+    #[tokio::test]
+    async fn time_limit() {
+        let pwd = tempdir_in("/tmp").unwrap();
+        let process = Process::new(
+            String::from("/bin/sleep 100"),
+            1000,
+            65535,
+            pwd.path().to_path_buf(),
+        );
+        let result = Runner::from(process).unwrap().await.unwrap();
+        assert!(result.time_used < 2000);
+        assert!(result.real_time_used < 5000);
+        assert!(result.real_time_used >= 1000);
+        assert_ne!(result.signal, 0);
     }
 }

@@ -2,7 +2,7 @@
 
 use libc::strerror;
 use std::ffi::CStr;
-use std::ffi::NulError;
+use std::ffi::{NulError, OsString};
 use std::fmt;
 use std::io;
 use std::result;
@@ -17,6 +17,7 @@ pub enum Error {
     CustomError(String),
     LanguageNotFound(String),
     SystemError(String),
+    OsStringToStringError(OsString),
 }
 
 pub type Result<T> = result::Result<T, Error>;

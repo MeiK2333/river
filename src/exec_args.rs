@@ -1,4 +1,5 @@
 use super::error::{Error, Result};
+use std::env;
 use std::ffi::CString;
 use std::mem;
 use std::ptr;
@@ -9,6 +10,7 @@ use std::println as debug;
 pub struct ExecArgs {
     pub pathname: *const libc::c_char,
     pub argv: *const *const libc::c_char,
+    pub envp: *const *const libc::c_char,
 }
 
 impl ExecArgs {
@@ -37,9 +39,40 @@ impl ExecArgs {
         argv_vec.push(ptr::null());
         let argv: *const *const libc::c_char = argv_vec.as_ptr() as *const *const libc::c_char;
 
+        // env 环境变量传递当前进程环境变量
+        let mut envp_vec: Vec<*const libc::c_char> = vec![];
+        for (key, value) in env::vars_os() {
+            let mut key = match key.to_str() {
+                Some(val) => val.to_string(),
+                None => return Err(Error::OsStringToStringError(key)),
+            };
+            let value = match value.to_str() {
+                Some(val) => val.to_string(),
+                None => return Err(Error::OsStringToStringError(value)),
+            };
+            key.push_str("=");
+            key.push_str(&value);
+            let cstr = match CString::new(key) {
+                Ok(value) => value,
+                Err(err) => return Err(Error::StringToCStringError(err)),
+            };
+            let cptr = cstr.as_ptr();
+            // 需要使用 mem::forget 来标记
+            // 否则在此次循环结束后，cstr 就会被回收，后续 exec 函数无法通过指针获取到字符串内容
+            mem::forget(cstr);
+            envp_vec.push(cptr);
+        }
+        envp_vec.push(ptr::null());
+        let envp = envp_vec.as_ptr() as *const *const libc::c_char;
+
         mem::forget(pathname_str);
         mem::forget(argv_vec);
-        Ok(ExecArgs { pathname, argv })
+        mem::forget(envp_vec);
+        Ok(ExecArgs {
+            pathname,
+            argv,
+            envp,
+        })
     }
 }
 
