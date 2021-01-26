@@ -1,7 +1,42 @@
-data_dir: /data
+data_dir: /root/river/runtime/data
 judge_dir: /tmp
 languages:
   C:
     compile_cmd: /usr/bin/gcc main.c -o a.out -Wall -O2 -std=c99 --static
     code_file: main.c
     run_cmd: ./a.out
+
+  Cpp:
+    compile_cmd: /usr/bin/g++ main.cpp -O2 -Wall --static -o a.out --std=gnu++17
+    code_file: main.cpp
+    run_cmd: ./a.out
+
+  Python:
+    compile_cmd: /usr/bin/python3.8 -m compileall main.py
+    code_file: main.py
+    run_cmd: /usr/bin/python3.8 main.py
+
+  Rust:
+    compile_cmd: /root/.cargo/bin/rustc main.rs -o a.out -C opt-level=2
+    code_file: main.rs
+    run_cmd: ./a.out
+
+  Node:
+    compile_cmd: /usr/bin/node /plugins/node/validate.js main.js
+    code_file: main.js
+    run_cmd: /usr/bin/node main.js
+
+  TypeScript:
+    compile_cmd: /usr/bin/tsc -p /tsconfig.json
+    code_file: main.ts
+    run_cmd: /usr/bin/node main.js
+
+  Go:
+    compile_cmd: /usr/bin/go build -o a.out main.go
+    code_file: main.go
+    run_cmd: ./a.out
+
+  Java:
+    compile_cmd: /usr/bin/javac Main.java
+    code_file: Main.java
+    run_cmd: /usr/bin/java -cp . Main

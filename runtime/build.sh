@@ -6,3 +6,5 @@ docker stop river
 docker rm river
 
 chmod -R 755 rootfs
+
+mknod -m 0666 rootfs/dev/null c 1 3

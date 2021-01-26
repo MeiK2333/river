@@ -16,3 +16,4 @@ Cargo.lock
 nohup.out
 
 config.yaml
+logs

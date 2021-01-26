@@ -294,6 +294,15 @@ unsafe fn security(process: &Process) {
         ptr::null_mut()
     ));
 
+    // 挂载 /proc 目录，有些语言（比如 rust）依赖此目录
+    syscall_or_panic!(libc::mount(
+        c_str_ptr!("proc"),
+        c_str_ptr!("runtime/rootfs/proc"),
+        c_str_ptr!("proc"),
+        0,
+        ptr::null_mut(),
+    ));
+
     // 挂载运行文件夹，除此目录外程序没有其他目录的写权限
     syscall_or_panic!(libc::mount(
         c_str_ptr!(process.workdir.to_str().unwrap()),
@@ -533,5 +542,35 @@ mod tests {
         assert!(result.real_time_used < 5000);
         assert!(result.real_time_used >= 1000);
         assert_ne!(result.signal, 0);
+    }
+
+    #[tokio::test]
+    async fn test_ls() {
+        let pwd = tempdir_in("/tmp").unwrap();
+        let process = Process::new(
+            String::from("/bin/ls -lah /dev"),
+            1000,
+            65535,
+            pwd.path().to_path_buf(),
+        );
+        let result = Runner::from(process).unwrap().await.unwrap();
+        assert_eq!(result.signal, 0);
+        let out = std::fs::read_to_string(pwd.path().join(STDOUT_FILENAME)).unwrap();
+        println!("{}", out);
+    }
+
+    #[tokio::test]
+    async fn test_dev_null() {
+        let pwd = tempdir_in("/tmp").unwrap();
+        let process = Process::new(
+            String::from("/bin/cat /dev/null"),
+            1000,
+            65535,
+            pwd.path().to_path_buf(),
+        );
+        let result = Runner::from(process).unwrap().await.unwrap();
+        assert_eq!(result.signal, 0);
+        let out = std::fs::read_to_string(pwd.path().join(STDOUT_FILENAME)).unwrap();
+        println!("{}", out);
     }
 }

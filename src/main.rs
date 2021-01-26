@@ -2,9 +2,9 @@
 #[macro_use]
 extern crate log;
 
-use env_logger::Env;
 use futures::StreamExt;
 use futures_core::Stream;
+use log4rs;
 use river::judge_request::Data;
 use river::river_server::{River, RiverServer};
 use river::{JudgeRequest, JudgeResponse, JudgeResultEnum};
@@ -49,6 +49,7 @@ impl River for RiverService {
                     return;
                 }
             };
+            debug!("{:?}", pwd);
             // 是否通过编译
             let mut compile_success = false;
             let mut language = String::from("");
@@ -106,11 +107,7 @@ impl River for RiverService {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let env = Env::default()
-        .filter_or("LOG_LEVEL", "debug,h2=info,hyper=info")
-        .write_style_or("LOG_STYLE", "always");
-
-    env_logger::init_from_env(env);
+    log4rs::init_file("log4rs.yaml", Default::default()).unwrap();
 
     let addr = "0.0.0.0:4003".parse()?;
     let river = RiverService::default();

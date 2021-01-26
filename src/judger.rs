@@ -75,18 +75,13 @@ pub async fn judge(
     } else {
         status.cgroup_memory_used
     };
-    if status.time_used > time_limit.into() {
+    if status.time_used > time_limit.into() || status.real_time_used as i64 > time_limit.into() {
         // TLE
         return Ok(time_limit_exceeded(status.time_used, mem_used));
     } else if mem_used > memory_limit.into() {
         // MLE
         return Ok(memory_limit_exceeded(status.time_used, mem_used));
     } else if status.signal != 0 {
-        // 因墙上时钟超时被主动中断
-        if status.real_time_used as i64 > time_limit.into() {
-            // TLE
-            return Ok(time_limit_exceeded(status.time_used, mem_used));
-        }
         // RE
         return Ok(runtime_error(
             status.time_used,

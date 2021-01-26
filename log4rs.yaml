@@ -1,0 +1,16 @@
+refresh_rate: 30 seconds
+appenders:
+  console:
+    kind: console
+    encoder:
+      pattern: "{d(%Y-%m-%d %H:%M:%S)} [{h({l})}] {m}{n}"
+  file:
+    kind: file
+    path: "logs/river.log"
+    encoder:
+      pattern: "{d(%Y-%m-%d %H:%M:%S)} [{l}] {m}{n}"
+root:
+  level: debug
+  appenders:
+    - file
+    - console
