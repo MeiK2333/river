@@ -7,7 +7,9 @@ use futures_core::Stream;
 use log4rs;
 use river::judge_request::Data;
 use river::river_server::{River, RiverServer};
-use river::{JudgeRequest, JudgeResponse, JudgeResultEnum};
+use river::{
+    Empty, JudgeRequest, JudgeResponse, JudgeResultEnum, LanguageConfigResponse, LanguageItem,
+};
 use std::pin::Pin;
 use tempfile::tempdir_in;
 use tonic::transport::Server;
@@ -102,6 +104,24 @@ impl River for RiverService {
         };
 
         Ok(Response::new(Box::pin(output) as Self::JudgeStream))
+    }
+
+    async fn language_config(
+        &self,
+        _request: Request<Empty>,
+    ) -> Result<Response<LanguageConfigResponse>, Status> {
+        let mut languages: Vec<LanguageItem> = vec![];
+        for (key, value) in &config::CONFIG.languages {
+            languages.push(LanguageItem {
+                language: String::from(key),
+                compile: String::from(&value.compile_cmd),
+                run: String::from(&value.run_cmd),
+            });
+        }
+        let response = LanguageConfigResponse {
+            languages: languages,
+        };
+        Ok(Response::new(response))
     }
 }
 

@@ -3,6 +3,20 @@ package river;
 
 service River {
   rpc Judge(stream JudgeRequest) returns (stream JudgeResponse) {}
+  rpc LanguageConfig(Empty) returns (LanguageConfigResponse) {}
+}
+
+message Empty {
+}
+
+message LanguageItem {
+  string language = 1;
+  string compile = 2;
+  string run = 3;
+}
+
+message LanguageConfigResponse {
+  repeated LanguageItem languages = 1;
 }
 
 message CompileData {
