@@ -4,6 +4,15 @@ package river;
 service River {
   rpc Judge(stream JudgeRequest) returns (stream JudgeResponse) {}
   rpc LanguageConfig(Empty) returns (LanguageConfigResponse) {}
+  rpc Ls(LsRequest) returns (LsResponse) {}
+}
+
+message LsRequest {
+  string dir = 1;
+}
+
+message LsResponse {
+  repeated string files = 1;
 }
 
 message Empty {

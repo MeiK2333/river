@@ -9,9 +9,12 @@ use river::judge_request::Data;
 use river::river_server::{River, RiverServer};
 use river::{
     Empty, JudgeRequest, JudgeResponse, JudgeResultEnum, LanguageConfigResponse, LanguageItem,
+    LsRequest, LsResponse,
 };
+use std::path::Path;
 use std::pin::Pin;
 use tempfile::tempdir_in;
+use tokio::fs::read_dir;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 
@@ -122,6 +125,26 @@ impl River for RiverService {
         let response = LanguageConfigResponse {
             languages: languages,
         };
+        Ok(Response::new(response))
+    }
+
+    async fn ls(&self, request: Request<LsRequest>) -> Result<Response<LsResponse>, Status> {
+        // TODO: 将获取文件的接口剥离出来，归入评测文件管理系统中
+        // TODO: 最终将会删除这个接口
+        // TODO: 目前有安全隐患，可以获取到任意目录文件
+        let dir = request.into_inner().dir;
+        let mut response = LsResponse { files: vec![] };
+        let directory_stream = match read_dir(Path::new("runtime/data").join(dir)).await {
+            Ok(val) => val,
+            Err(_) => return Ok(Response::new(response)),
+        };
+        let files: Vec<_> = directory_stream
+            .filter_map(|file| async move {
+                Some(file.unwrap().file_name().into_string().unwrap())
+            })
+            .collect()
+            .await;
+        response.files = files;
         Ok(Response::new(response))
     }
 }
