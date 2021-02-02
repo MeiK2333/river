@@ -5,38 +5,49 @@ languages:
     compile_cmd: /usr/bin/gcc main.c -o a.out -Wall -O2 -std=c99 --static
     code_file: main.c
     run_cmd: ./a.out
+    version: gcc (Ubuntu 9.3.0-17ubuntu1~20.04) 9.3.0
 
   Cpp:
     compile_cmd: /usr/bin/g++ main.cpp -O2 -Wall --static -o a.out --std=gnu++17
     code_file: main.cpp
     run_cmd: ./a.out
+    version: g++ (Ubuntu 9.3.0-17ubuntu1~20.04) 9.3.0
 
   Python:
     compile_cmd: /usr/bin/python3.8 -m compileall main.py
     code_file: main.py
     run_cmd: /usr/bin/python3.8 main.py
+    version: Python 3.8.5
 
   Rust:
     compile_cmd: /root/.cargo/bin/rustc main.rs -o a.out -C opt-level=2
     code_file: main.rs
     run_cmd: ./a.out
+    version: rustc 1.49.0 (e1884a8e3 2020-12-29)
 
   Node:
     compile_cmd: /usr/bin/node /plugins/node/validate.js main.js
     code_file: main.js
     run_cmd: /usr/bin/node main.js
+    version: v14.15.4
 
   TypeScript:
     compile_cmd: /usr/bin/tsc -p /tsconfig.json
     code_file: main.ts
     run_cmd: /usr/bin/node main.js
+    version: v9.1.1
 
   Go:
     compile_cmd: /usr/bin/go build -o a.out main.go
     code_file: main.go
     run_cmd: ./a.out
+    version: go version go1.15.6 linux/amd64
 
   Java:
     compile_cmd: /usr/bin/javac Main.java
     code_file: Main.java
     run_cmd: /usr/bin/java -cp . Main
+    version: |-
+      openjdk 11.0.9.1 2020-11-04
+      OpenJDK Runtime Environment (build 11.0.9.1+1-Ubuntu-0ubuntu1.20.04)
+      OpenJDK 64-Bit Server VM (build 11.0.9.1+1-Ubuntu-0ubuntu1.20.04, mixed mode, sharing)

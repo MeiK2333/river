@@ -116,6 +116,7 @@ impl River for RiverService {
                 language: String::from(key),
                 compile: String::from(&value.compile_cmd),
                 run: String::from(&value.run_cmd),
+                version: String::from(&value.version),
             });
         }
         let response = LanguageConfigResponse {

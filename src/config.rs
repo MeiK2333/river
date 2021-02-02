@@ -21,6 +21,7 @@ pub struct LanguageConf {
     pub compile_cmd: String,
     pub code_file: String,
     pub run_cmd: String,
+    pub version: String,
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
