@@ -7,12 +7,17 @@ service River {
   rpc Ls(LsRequest) returns (LsResponse) {}
 }
 
+message LsCase {
+  string in = 1;
+  string out = 2;
+}
+
 message LsRequest {
-  string dir = 1;
+  int32 pid = 1;
 }
 
 message LsResponse {
-  repeated string files = 1;
+  repeated LsCase cases = 1;
 }
 
 message Empty {

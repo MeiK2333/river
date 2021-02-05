@@ -9,7 +9,7 @@ use river::judge_request::Data;
 use river::river_server::{River, RiverServer};
 use river::{
     Empty, JudgeRequest, JudgeResponse, JudgeResultEnum, LanguageConfigResponse, LanguageItem,
-    LsRequest, LsResponse,
+    LsRequest, LsResponse, LsCase
 };
 use std::path::Path;
 use std::pin::Pin;
@@ -132,9 +132,9 @@ impl River for RiverService {
         // TODO: 将获取文件的接口剥离出来，归入评测文件管理系统中
         // TODO: 最终将会删除这个接口
         // TODO: 目前有安全隐患，可以获取到任意目录文件
-        let dir = request.into_inner().dir;
-        let mut response = LsResponse { files: vec![] };
-        let directory_stream = match read_dir(Path::new("runtime/data").join(dir)).await {
+        let pid = request.into_inner().pid;
+        let mut response = LsResponse { cases: vec![] };
+        let directory_stream = match read_dir(Path::new("runtime/data").join(pid.to_string())).await {
             Ok(val) => val,
             Err(_) => return Ok(Response::new(response)),
         };
@@ -144,7 +144,20 @@ impl River for RiverService {
             })
             .collect()
             .await;
-        response.files = files;
+        let mut iter = 1;
+        loop {
+            let in_file = format!("{}.in", iter);
+            let out_file = format!("{}.out", iter);
+            if files.contains(&in_file) && files.contains((&out_file)) {
+                response.cases.push(LsCase{
+                    r#in: in_file,
+                    out: out_file
+                });
+                iter += 1;
+            } else {
+                break;
+            }
+        }
         Ok(Response::new(response))
     }
 }
