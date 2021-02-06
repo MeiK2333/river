@@ -29,13 +29,13 @@ languages:
     compile_cmd: /usr/bin/node /plugins/node/validate.js main.js
     code_file: main.js
     run_cmd: /usr/bin/node main.js
-    version: v14.15.4
+    version: Node.js v14.15.4
 
   TypeScript:
     compile_cmd: /usr/bin/tsc -p /tsconfig.json
     code_file: main.ts
     run_cmd: /usr/bin/node main.js
-    version: Version 4.1.3
+    version: v4.1.3 (Node.js v14.15.4)
 
   Go:
     compile_cmd: /usr/bin/go build -o a.out main.go
