@@ -9,7 +9,7 @@ use river::judge_request::Data;
 use river::river_server::{River, RiverServer};
 use river::{
     Empty, JudgeRequest, JudgeResponse, JudgeResultEnum, LanguageConfigResponse, LanguageItem,
-    LsRequest, LsResponse, LsCase
+    LsCase, LsRequest, LsResponse,
 };
 use std::path::Path;
 use std::pin::Pin;
@@ -47,6 +47,7 @@ impl River for RiverService {
         let mut stream = request.into_inner();
 
         let output = async_stream::try_stream! {
+            info!("new judge request");
             let pwd = match tempdir_in(&config::CONFIG.judge_dir) {
                 Ok(val) => val,
                 Err(e) => {
@@ -60,7 +61,6 @@ impl River for RiverService {
             let mut language = String::from("");
             while let Some(req) = stream.next().await {
                 yield result::pending();
-                // TODO: 限制并发数量
                 yield result::running();
                 let req = req?;
                 let result = match &req.data {
@@ -96,7 +96,6 @@ impl River for RiverService {
                         }
                     },
                     None => Err(error::Error::CustomError(String::from("unrecognized request types"))),
-                    _ => Err(error::Error::CustomError(String::from("unrecognized request types"))),
                 };
                 let res = match result {
                     Ok(res) => res,
@@ -129,29 +128,32 @@ impl River for RiverService {
     }
 
     async fn ls(&self, request: Request<LsRequest>) -> Result<Response<LsResponse>, Status> {
-        // TODO: 将获取文件的接口剥离出来，归入评测文件管理系统中
-        // TODO: 最终将会删除这个接口
-        // TODO: 目前有安全隐患，可以获取到任意目录文件
         let pid = request.into_inner().pid;
         let mut response = LsResponse { cases: vec![] };
-        let directory_stream = match read_dir(Path::new("runtime/data").join(pid.to_string())).await {
-            Ok(val) => val,
-            Err(_) => return Ok(Response::new(response)),
-        };
-        let files: Vec<_> = directory_stream
-            .filter_map(|file| async move {
-                Some(file.unwrap().file_name().into_string().unwrap())
-            })
-            .collect()
-            .await;
+        let mut directory_stream =
+            match read_dir(Path::new("runtime/data").join(pid.to_string())).await {
+                Ok(val) => val,
+                Err(_) => return Ok(Response::new(response)),
+            };
+        let mut files: Vec<String> = vec![];
+        while let Ok(Some(entry)) = directory_stream.next_entry().await {
+            let file = entry.file_name().into_string().unwrap();
+            files.push(file);
+        }
+        // let files: Vec<_> = directory_stream
+        //     .filter_map(|file| async move {
+        //         Some(file.unwrap().file_name().into_string().unwrap())
+        //     })
+        //     .collect()
+        //     .await;
         let mut iter = 1;
         loop {
             let in_file = format!("{}.in", iter);
             let out_file = format!("{}.out", iter);
             if files.contains(&in_file) && files.contains((&out_file)) {
-                response.cases.push(LsCase{
+                response.cases.push(LsCase {
                     r#in: in_file,
-                    out: out_file
+                    out: out_file,
                 });
                 iter += 1;
             } else {

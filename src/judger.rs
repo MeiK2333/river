@@ -1,4 +1,4 @@
-use crate::config::{CONFIG, STDERR_FILENAME, STDIN_FILENAME, STDOUT_FILENAME};
+use crate::config::{CONFIG, STDERR_FILENAME, STDIN_FILENAME, STDOUT_FILENAME, CPU_SEMAPHORE};
 use crate::error::{Error, Result};
 use crate::process::{Process, Runner};
 use crate::result::{
@@ -23,8 +23,11 @@ pub async fn compile(language: &str, code: &str, path: &Path) -> Result<JudgeRes
         1024 * 1024,
         path.to_path_buf(),
     );
+    let semaphore = CPU_SEMAPHORE.clone();
+    let permit = semaphore.acquire().await;
     let result = Runner::from(process)?;
     let status = result.await?;
+    drop(permit);
     let mem_used = if status.memory_used < status.cgroup_memory_used {
         status.memory_used
     } else {
@@ -67,8 +70,12 @@ pub async fn judge(
         memory_limit,
         path.to_path_buf(),
     );
+    // 信号量控制并发
+    let semaphore = CPU_SEMAPHORE.clone();
+    let permit = semaphore.acquire().await;
     let result = Runner::from(process)?;
     let status = result.await?;
+    drop(permit);
     // 为了更好的体验，此处内存用量取 getrusage 报告与 cgroup 报告中较小的一个
     let mem_used = if status.memory_used < status.cgroup_memory_used {
         status.memory_used
