@@ -153,7 +153,7 @@ impl Future for Runner {
             runner.cgroup_set.apply(pid).unwrap();
             runner.cgroup_set.memory.set(
                 "memory.limit_in_bytes",
-                &format!("{}", runner.process.memory_limit as i64 * 1536), // 本来应该乘以 1024，此处略微放宽限制，从而让用户体验更好
+                &format!("{}", runner.process.memory_limit as i64 * 1024 * 10), // 本来应该乘以 1024，此处放宽限制，从而让用户体验更好
             )?;
             let tx = runner.tx.clone();
 

@@ -35,3 +35,5 @@ RUN add-apt-repository -y ppa:longsleep/golang-backports && apt-get install -y g
 RUN apt-get install -y default-jdk
 
 RUN rm -rf /var/lib/apt/lists/*
+
+RUN rustup default stable
