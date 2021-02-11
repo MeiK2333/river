@@ -13,6 +13,7 @@ RUN apt-get install -y software-properties-common && add-apt-repository -y ppa:d
 # install rust
 RUN apt-get install -y curl && curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain stable -y
 ENV PATH="/root/.cargo/bin:${PATH}"
+RUN rustup default stable
 
 # install node
 RUN curl -sL https://deb.nodesource.com/setup_14.x | bash - && apt-get install -y nodejs
@@ -35,5 +36,3 @@ RUN add-apt-repository -y ppa:longsleep/golang-backports && apt-get install -y g
 RUN apt-get install -y default-jdk
 
 RUN rm -rf /var/lib/apt/lists/*
-
-RUN rustup default stable

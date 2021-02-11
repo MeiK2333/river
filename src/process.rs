@@ -70,22 +70,45 @@ impl Process {
     }
 }
 
+// 为 clone 的栈所需的指针创建 Send 与 Sync 包装
+// 因为 Rust 编译器不允许原始的 c_void 在线程间同步
+// 我们可以创建一个包装来规避这个问题，但前提是我们需要明白我们在做什么
+struct Stack {
+    stack: *const libc::c_void,
+}
+
+unsafe impl Send for Stack {}
+unsafe impl Sync for Stack {}
+
 pub struct Runner {
     process: Process,
     pid: i32,
     tx: Arc<Mutex<mpsc::Sender<RunnerStatus>>>,
     rx: Arc<Mutex<mpsc::Receiver<RunnerStatus>>>,
+    stack: Stack,
     cgroup_set: CGroupSet,
 }
 
 impl Runner {
     pub fn from(process: Process) -> Result<Runner> {
         let (tx, rx) = mpsc::channel();
+        let stack = unsafe {
+            libc::mmap(
+                ptr::null_mut(),
+                STACK_SIZE,
+                libc::PROT_READ | libc::PROT_WRITE,
+                libc::MAP_PRIVATE | libc::MAP_ANONYMOUS | libc::MAP_STACK,
+                -1,
+                0,
+            )
+        };
+        debug!("mmap stack");
         Ok(Runner {
             process: process,
             pid: -1,
             tx: Arc::new(Mutex::new(tx)),
             rx: Arc::new(Mutex::new(rx)),
+            stack: Stack { stack: stack },
             cgroup_set: CGroupSet::new()?,
         })
     }
@@ -107,6 +130,8 @@ impl Drop for Runner {
     fn drop(&mut self) {
         debug!("dropping");
         unsafe {
+            libc::munmap(self.stack.stack as *mut libc::c_void, STACK_SIZE);
+            debug!("munmap stack");
             killpid(self.pid);
         }
     }
@@ -118,24 +143,13 @@ impl Future for Runner {
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<RunnerStatus>> {
         let runner = Pin::into_inner(self);
         let time_limit = (runner.process.time_limit / 1000 + 1) as u64 * 2;
-        // 创建 clone 所需的栈空间
-        let stack = unsafe {
-            libc::mmap(
-                ptr::null_mut(),
-                STACK_SIZE,
-                libc::PROT_READ | libc::PROT_WRITE,
-                libc::MAP_PRIVATE | libc::MAP_ANONYMOUS | libc::MAP_STACK,
-                -1,
-                0,
-            )
-        };
         // 如果 pid == -1，则说明子进程还没有运行
         if runner.pid == -1 {
             let waker = cx.waker().clone();
             let pid = unsafe {
                 libc::clone(
                     runit,
-                    (stack as usize + STACK_SIZE) as *mut libc::c_void,
+                    (runner.stack.stack as usize + STACK_SIZE) as *mut libc::c_void,
                     libc::SIGCHLD
                     | libc::CLONE_NEWUTS  // 设置新的 UTS 名称空间（主机名、网络名等）
                     | libc::CLONE_NEWNET  // 设置新的网络空间，如果没有配置网络，则该沙盒内部将无法联网
@@ -175,9 +189,6 @@ impl Future for Runner {
             });
             return Poll::Pending;
         } else {
-            unsafe {
-                libc::munmap(stack, STACK_SIZE);
-            }
             let mut status = runner.rx.lock().unwrap().recv().unwrap();
             let mem_used = match runner
                 .cgroup_set
