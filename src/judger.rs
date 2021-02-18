@@ -84,7 +84,9 @@ pub async fn judge(
     } else {
         status.cgroup_memory_used
     };
-    if status.time_used > time_limit.into() || status.real_time_used as i64 > time_limit.into() {
+    if status.time_used > time_limit.into()
+        || status.real_time_used as i64 > (time_limit * 2 + 2).into()
+    {
         // TLE
         return Ok(time_limit_exceeded(status.time_used, mem_used));
     } else if mem_used > memory_limit.into() {

@@ -165,6 +165,11 @@ impl Future for Runner {
             // 设置 cgroup 限制
             // 此处为父进程做的策略，所以没有与子进程的安全策略放一块
             runner.cgroup_set.apply(pid).unwrap();
+            // 阻止沙盒内部使用 swap
+            runner.cgroup_set.memory.set(
+                "memory.swappiness",
+                "0",
+            )?;
             runner.cgroup_set.memory.set(
                 "memory.limit_in_bytes",
                 &format!("{}", runner.process.memory_limit as i64 * 1024 * 10), // 本来应该乘以 1024，此处放宽限制，从而让用户体验更好
