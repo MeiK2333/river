@@ -1,11 +1,12 @@
 #![macro_use]
 
-use libc::strerror;
-use std::ffi::CStr;
 use std::ffi::{NulError, OsString};
+use std::ffi::CStr;
 use std::fmt;
 use std::io;
 use std::result;
+
+use libc::strerror;
 
 #[allow(dead_code)]
 #[derive(Debug)]

@@ -1,7 +1,7 @@
 use crate::error::Error;
 use crate::error::Result;
-use crate::river::judge_response::State;
 use crate::river::{JudgeResponse, JudgeResult, JudgeResultEnum, JudgeStatus};
+use crate::river::judge_response::State;
 
 pub fn system_error(err: Error) -> JudgeResponse {
     warn!("{}", err);
@@ -30,8 +30,8 @@ pub fn running() -> JudgeResponse {
 pub fn compile_error(time_used: i64, memory_used: i64, errmsg: &str) -> JudgeResponse {
     JudgeResponse {
         state: Some(State::Result(JudgeResult {
-            time_used: time_used,
-            memory_used: memory_used,
+            time_used,
+            memory_used,
             result: JudgeResultEnum::CompileError as i32,
             errmsg: String::from(errmsg),
         })),
@@ -61,8 +61,8 @@ pub fn memory_limit_exceeded(time_used: i64, memory_used: i64) -> JudgeResponse 
 pub fn runtime_error(time_used: i64, memory_used: i64, errmsg: &str) -> JudgeResponse {
     JudgeResponse {
         state: Some(State::Result(JudgeResult {
-            time_used: time_used,
-            memory_used: memory_used,
+            time_used,
+            memory_used,
             result: JudgeResultEnum::RuntimeError as i32,
             errmsg: String::from(errmsg),
         })),
@@ -72,8 +72,8 @@ pub fn runtime_error(time_used: i64, memory_used: i64, errmsg: &str) -> JudgeRes
 fn judge_result(time_used: i64, memory_used: i64, result: JudgeResultEnum) -> JudgeResponse {
     JudgeResponse {
         state: Some(State::Result(JudgeResult {
-            time_used: time_used,
-            memory_used: memory_used,
+            time_used,
+            memory_used,
             result: result as i32,
             errmsg: String::from(""),
         })),
@@ -173,6 +173,7 @@ fn next_line(v: &[u8], offset: usize, len: usize) -> (usize, usize, bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     #[test]
     fn test1() {
         let v: &[u8] = "Hello World!".as_bytes();
@@ -258,6 +259,7 @@ mod tests {
             JudgeResultEnum::WrongAnswer
         );
     }
+
     #[test]
     fn test9() {
         let ans: &[u8] = "".as_bytes();

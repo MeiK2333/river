@@ -1,9 +1,10 @@
-use lazy_static::lazy_static;
-use num_cpus;
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::sync::Arc;
+
+use lazy_static::lazy_static;
+use num_cpus;
+use serde::{Deserialize, Serialize};
 use tokio::sync::Semaphore;
 
 pub static STDIN_FILENAME: &str = "stdin.txt";

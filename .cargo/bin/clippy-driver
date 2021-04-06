@@ -1,2 +1,0 @@
-#!/bin/bash
-$(which clippy-driver) ${@:1}

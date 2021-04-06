@@ -2,31 +2,29 @@
 #[macro_use]
 extern crate log;
 
+use std::path::Path;
+use std::pin::Pin;
+
 use futures::StreamExt;
 use futures_core::Stream;
 use log4rs;
-use river::judge_request::Data;
-use river::river_server::{River, RiverServer};
+use tempfile::tempdir_in;
+use tokio::fs::read_dir;
+use tonic::{Request, Response, Status};
+use tonic::transport::Server;
+
 use river::{
     Empty, JudgeRequest, JudgeResponse, JudgeResultEnum, LanguageConfigResponse, LanguageItem,
     LsCase, LsRequest, LsResponse,
 };
-use std::path::Path;
-use std::pin::Pin;
-use tempfile::tempdir_in;
-use tokio::fs::read_dir;
-use tonic::transport::Server;
-use tonic::{Request, Response, Status};
+use river::judge_request::Data;
+use river::river_server::{River, RiverServer};
 
 mod config;
 mod error;
 
-mod cgroup;
-mod exec_args;
 mod judger;
-mod process;
 mod result;
-mod seccomp;
 
 pub mod river {
     tonic::include_proto!("river");
@@ -38,7 +36,7 @@ pub struct RiverService {}
 #[tonic::async_trait]
 impl River for RiverService {
     type JudgeStream =
-        Pin<Box<dyn Stream<Item = Result<JudgeResponse, Status>> + Send + Sync + 'static>>;
+    Pin<Box<dyn Stream<Item=Result<JudgeResponse, Status>> + Send + Sync + 'static>>;
 
     async fn judge(
         &self,
@@ -125,7 +123,7 @@ impl River for RiverService {
             });
         }
         let response = LanguageConfigResponse {
-            languages: languages,
+            languages,
         };
         Ok(Response::new(response))
     }
