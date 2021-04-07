@@ -1,5 +1,7 @@
-data_dir: /root/river/runtime/data
+data_dir: /data
 judge_dir: /tmp
+rootfs: /root/river/newbie-sandbox/runtime/rootfs
+cgroup: 1
 languages:
   C:
     compile_cmd: /usr/bin/gcc main.c -o a.out -Wall -O2 -std=c99 --static

@@ -1,7 +1,7 @@
 use crate::error::Error;
 use crate::error::Result;
-use crate::river::{JudgeResponse, JudgeResult, JudgeResultEnum, JudgeStatus};
 use crate::river::judge_response::State;
+use crate::river::{JudgeResponse, JudgeResult, JudgeResultEnum, JudgeStatus};
 
 pub fn system_error(err: Error) -> JudgeResponse {
     warn!("{}", err);

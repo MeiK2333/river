@@ -7,9 +7,10 @@ use num_cpus;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Semaphore;
 
-pub static STDIN_FILENAME: &str = "stdin.txt";
+// pub static STDIN_FILENAME: &str = "stdin.txt";
 pub static STDOUT_FILENAME: &str = "stdout.txt";
 pub static STDERR_FILENAME: &str = "stderr.txt";
+pub static RESULT_FILENAME: &str = "result.txt";
 
 lazy_static! {
     pub static ref CONFIG: Config = {
@@ -38,5 +39,7 @@ pub struct LanguageConf {
 pub struct Config {
     pub data_dir: String,
     pub judge_dir: String,
+    pub cgroup: i32,
+    pub rootfs: String,
     pub languages: HashMap<String, LanguageConf>,
 }

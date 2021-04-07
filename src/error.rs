@@ -1,7 +1,7 @@
 #![macro_use]
 
-use std::ffi::{NulError, OsString};
 use std::ffi::CStr;
+use std::ffi::{NulError, OsString};
 use std::fmt;
 use std::io;
 use std::result;
@@ -19,6 +19,9 @@ pub enum Error {
     LanguageNotFound(String),
     SystemError(String),
     OsStringToStringError(OsString),
+    PathToStringError(),
+    StringSplitError(),
+    StringToIntError(String),
 }
 
 pub type Result<T> = result::Result<T, Error>;
@@ -29,7 +32,7 @@ macro_rules! try_io {
     ($expression:expr) => {
         match $expression {
             Ok(val) => val,
-            Err(e) => return Err(Error::IOError(e)),
+            Err(e) => return Err(crate::error::Error::IOError(e)),
         };
     };
 }

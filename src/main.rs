@@ -10,21 +10,22 @@ use futures_core::Stream;
 use log4rs;
 use tempfile::tempdir_in;
 use tokio::fs::read_dir;
-use tonic::{Request, Response, Status};
 use tonic::transport::Server;
+use tonic::{Request, Response, Status};
 
+use river::judge_request::Data;
+use river::river_server::{River, RiverServer};
 use river::{
     Empty, JudgeRequest, JudgeResponse, JudgeResultEnum, LanguageConfigResponse, LanguageItem,
     LsCase, LsRequest, LsResponse,
 };
-use river::judge_request::Data;
-use river::river_server::{River, RiverServer};
 
 mod config;
 mod error;
 
 mod judger;
 mod result;
+mod sandbox;
 
 pub mod river {
     tonic::include_proto!("river");
@@ -36,7 +37,7 @@ pub struct RiverService {}
 #[tonic::async_trait]
 impl River for RiverService {
     type JudgeStream =
-    Pin<Box<dyn Stream<Item=Result<JudgeResponse, Status>> + Send + Sync + 'static>>;
+        Pin<Box<dyn Stream<Item = Result<JudgeResponse, Status>> + Send + Sync + 'static>>;
 
     async fn judge(
         &self,
@@ -122,9 +123,7 @@ impl River for RiverService {
                 version: String::from(&value.version),
             });
         }
-        let response = LanguageConfigResponse {
-            languages,
-        };
+        let response = LanguageConfigResponse { languages };
         Ok(Response::new(response))
     }
 
@@ -145,7 +144,7 @@ impl River for RiverService {
         loop {
             let in_file = format!("data{}.in", iter);
             let out_file = format!("data{}.out", iter);
-            if files.contains(&in_file) && files.contains((&out_file)) {
+            if files.contains(&in_file) && files.contains(&out_file) {
                 response.cases.push(LsCase {
                     r#in: in_file,
                     out: out_file,
@@ -155,7 +154,6 @@ impl River for RiverService {
                 break;
             }
         }
-        debug!("ls: {:?}", response);
         Ok(Response::new(response))
     }
 }
