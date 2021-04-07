@@ -40,7 +40,7 @@ pub async fn compile(language: &str, code: &str, path: &Path) -> Result<JudgeRes
         path_to_string(&path.join(STDERR_FILENAME))?,
         5000,
         655350,
-        1024 * 1024,
+        50 * 1024 * 1024,
         i32::from(CONFIG.cgroup),
         10,
     );
@@ -51,10 +51,12 @@ pub async fn compile(language: &str, code: &str, path: &Path) -> Result<JudgeRes
     if status.exit_code != 0 || status.signal != 0 {
         // 合并 stdout 与 stderr 为 errmsg
         // 因为不同的语言、不同的编译器，错误信息输出到了不同的地方
+        let output = try_io!(read_to_string(path.join(STDOUT_FILENAME)).await);
+        let error = try_io!(read_to_string(path.join(STDERR_FILENAME)).await);
         let errmsg = format!(
             "{}\n{}",
-            try_io!(read_to_string(path.join(STDOUT_FILENAME)).await),
-            try_io!(read_to_string(path.join(STDERR_FILENAME)).await),
+            &output[..1024],
+            &error[..1024],
         );
         return Ok(compile_error(status.time_used, status.memory_used, &errmsg));
     }
