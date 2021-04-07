@@ -1,7 +1,8 @@
 use std::path::Path;
 
 use tokio::fs;
-use tokio::fs::{read_to_string, remove_file};
+use tokio::fs::{remove_file, File};
+use tokio::io::AsyncReadExt;
 
 use crate::config::{CONFIG, CPU_SEMAPHORE, RESULT_FILENAME, STDERR_FILENAME, STDOUT_FILENAME};
 use crate::error::{Error, Result};
@@ -51,12 +52,16 @@ pub async fn compile(language: &str, code: &str, path: &Path) -> Result<JudgeRes
     if status.exit_code != 0 || status.signal != 0 {
         // 合并 stdout 与 stderr 为 errmsg
         // 因为不同的语言、不同的编译器，错误信息输出到了不同的地方
-        let output = try_io!(read_to_string(path.join(STDOUT_FILENAME)).await);
-        let error = try_io!(read_to_string(path.join(STDERR_FILENAME)).await);
+        let mut outfile = try_io!(File::open(path.join(STDOUT_FILENAME)).await);
+        let mut errfile = try_io!(File::open(path.join(STDERR_FILENAME)).await);
+        let mut output = [0; 1024];
+        try_io!(outfile.read(&mut output).await);
+        let mut error = [0; 1024];
+        try_io!(errfile.read(&mut error).await);
         let errmsg = format!(
             "{}\n{}",
-            &output[..1024],
-            &error[..1024],
+            String::from_utf8_lossy(&output),
+            String::from_utf8_lossy(&error),
         );
         return Ok(compile_error(status.time_used, status.memory_used, &errmsg));
     }
