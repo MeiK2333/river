@@ -40,7 +40,7 @@ pub async fn compile(language: &str, code: &str, path: &Path) -> Result<JudgeRes
         path_to_string(&path.join(STDERR_FILENAME))?,
         5000,
         655350,
-        5 * 1024,
+        1024 * 1024,
         i32::from(CONFIG.cgroup),
         10,
     );
