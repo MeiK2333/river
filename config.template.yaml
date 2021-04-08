@@ -40,7 +40,7 @@ languages:
     version: v4.1.3 (Node.js v14.15.4)
 
   Go:
-    compile_cmd: /usr/bin/go build -o a.out main.go
+    compile_cmd: /usr/bin/go build -o a.out -p 1 main.go
     code_file: main.go
     run_cmd: ./a.out
     version: go version go1.15.6 linux/amd64

@@ -115,7 +115,11 @@ pub async fn judge(
         path_to_string(&path.join(STDOUT_FILENAME))?,
         path_to_string(&path.join(STDERR_FILENAME))?,
         time_limit,
-        if language == "Java" {
+        if language == "Java"
+            || language == "Go"
+            || language == "JavaScript"
+            || language == "TypeScript"
+        {
             1024 * 1024
         } else {
             memory_limit
