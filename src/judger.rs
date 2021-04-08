@@ -40,10 +40,10 @@ pub async fn compile(language: &str, code: &str, path: &Path) -> Result<JudgeRes
         path_to_string(&path.join(STDOUT_FILENAME))?,
         path_to_string(&path.join(STDERR_FILENAME))?,
         5000,
-        655350,
+        1024 * 1024,
         50 * 1024 * 1024,
         i32::from(CONFIG.cgroup),
-        10,
+        32,
     );
     let status = sandbox.spawn().await?;
     drop(permit);
@@ -52,17 +52,32 @@ pub async fn compile(language: &str, code: &str, path: &Path) -> Result<JudgeRes
     if status.exit_code != 0 || status.signal != 0 {
         // 合并 stdout 与 stderr 为 errmsg
         // 因为不同的语言、不同的编译器，错误信息输出到了不同的地方
+        let mut buffer = [0; 2048];
         let mut outfile = try_io!(File::open(path.join(STDOUT_FILENAME)).await);
         let mut errfile = try_io!(File::open(path.join(STDERR_FILENAME)).await);
-        let mut output = [0; 1024];
-        try_io!(outfile.read(&mut output).await);
-        let mut error = [0; 1024];
-        try_io!(errfile.read(&mut error).await);
-        let errmsg = format!(
-            "{}\n{}",
-            String::from_utf8_lossy(&output),
-            String::from_utf8_lossy(&error),
-        );
+        try_io!(outfile.read(&mut buffer).await);
+
+        let mut out_offset = 0;
+        let mut err_offset = 0;
+        for i in 0..2047 {
+            out_offset = i;
+            if buffer[i] == 0 {
+                break;
+            }
+        }
+        if out_offset != 0 {
+            buffer[out_offset] = b'\n';
+            out_offset += 1;
+        }
+        try_io!(errfile.read(&mut buffer[out_offset..]).await);
+        for i in out_offset..2048 {
+            err_offset = i;
+            if buffer[i] == 0 {
+                break;
+            }
+        }
+
+        let errmsg = String::from_utf8_lossy(&buffer[..err_offset]);
         return Ok(compile_error(status.time_used, status.memory_used, &errmsg));
     }
     Ok(compile_success(status.time_used, status.memory_used))
@@ -100,10 +115,14 @@ pub async fn judge(
         path_to_string(&path.join(STDOUT_FILENAME))?,
         path_to_string(&path.join(STDERR_FILENAME))?,
         time_limit,
-        memory_limit,
+        if language == "Java" {
+            1024 * 1024
+        } else {
+            memory_limit
+        },
         50 * 1024 * 1024,
         i32::from(CONFIG.cgroup),
-        2,
+        32,
     );
     let status = sandbox.spawn().await?;
     drop(permit);
