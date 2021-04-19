@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use tokio::fs;
 use tokio::fs::{remove_file, File};
@@ -15,7 +15,7 @@ use crate::result::{
     standard_result, time_limit_exceeded, wrong_answer,
 };
 use crate::river::{JudgeResponse, JudgeResultEnum, JudgeType};
-use crate::sandbox::Sandbox;
+use crate::sandbox::{ProcessExitStatus, Sandbox};
 
 fn path_to_string(path: &Path) -> Result<String> {
     if let Some(s) = path.to_str() {
@@ -56,32 +56,15 @@ pub async fn compile(language: &str, code: &str, path: &Path) -> Result<JudgeRes
     if status.exit_code != 0 || status.signal != 0 {
         // 合并 stdout 与 stderr 为 errmsg
         // 因为不同的语言、不同的编译器，错误信息输出到了不同的地方
-        let mut buffer = [0; 2048];
-        let mut outfile = try_io!(File::open(path.join(STDOUT_FILENAME)).await);
-        let mut errfile = try_io!(File::open(path.join(STDERR_FILENAME)).await);
-        try_io!(outfile.read(&mut buffer).await);
-
-        let mut out_offset = 0;
-        let mut err_offset = 0;
-        for i in 0..2047 {
-            out_offset = i;
-            if buffer[i] == 0 {
-                break;
-            }
-        }
-        if out_offset != 0 {
-            buffer[out_offset] = b'\n';
-            out_offset += 1;
-        }
-        try_io!(errfile.read(&mut buffer[out_offset..]).await);
-        for i in out_offset..2048 {
-            err_offset = i;
-            if buffer[i] == 0 {
-                break;
-            }
-        }
-
-        let errmsg = String::from_utf8_lossy(&buffer[..err_offset]);
+        let outmsg = read_file_2048(path.join(STDOUT_FILENAME)).await?;
+        let errmsg = read_file_2048(path.join(STDERR_FILENAME)).await?;
+        let errmsg = if outmsg == "" {
+            errmsg
+        } else if errmsg == "" {
+            outmsg
+        } else {
+            format!("{}\n{}", outmsg, errmsg)
+        };
         return Ok(compile_error(status.time_used, status.memory_used, &errmsg));
     }
     Ok(compile_success(status.time_used, status.memory_used))
@@ -169,96 +152,101 @@ pub async fn judge(
         };
     } else if judge_type == JudgeType::Special as i32 {
         // Special Judge
-        if spj_file == "" {
-            return Err(Error::SystemError(format!("field spj_file is required!")));
-        }
-        let spj = data_dir.join(&spj_file);
-        if !spj.exists() {
-            return Err(Error::SystemError(format!(
-                "Special Judge File `{}` Not Found!",
-                spj_file
-            )));
-        }
-        // 将 spj 程序复制到沙盒内部
-        try_io!(fs::copy(spj, path.join(SPJ_FILENAME)).await);
-
-        // TODO: 创建 input file 与 answer file 的 named pipe，穿透沙盒以文件形式传递给 spj 程序？
-        // 此方案不稳定因素较多，比如两个阻塞写入的线程、异常处理等。在没有明显性能问题前先不实现此方案
-
-        // 将 input file 与 answer file 复制到沙盒内部，以供 spj 使用
-        try_io!(fs::copy(data_dir.join(&in_file), path.join(SPJ_INPUT_FILENAME)).await);
-        try_io!(fs::copy(data_dir.join(&out_file), path.join(SPJ_ANSWER_FILENAME)).await);
-
-        // Program must be run with the following arguments: <input-file> <output-file> <answer-file>
-        let spj_cmd = format!(
-            "{} {} {} {}",
-            SPJ_FILENAME, SPJ_INPUT_FILENAME, STDOUT_FILENAME, SPJ_ANSWER_FILENAME
-        );
-
-        let semaphore = CPU_SEMAPHORE.clone();
-        let permit = semaphore.acquire().await;
-
-        let mut sandbox = Sandbox::new(
-            &spj_cmd,
-            path_to_string(&path)?,
-            String::from(&CONFIG.rootfs),
-            path_to_string(&path.join(SPJ_RESULT_FILENAME))?,
-            String::from("/STDIN/"),
-            path_to_string(&path.join(SPJ_STDOUT_FILENAME))?,
-            path_to_string(&path.join(SPJ_STDERR_FILENAME))?,
-            5000,
-            1024 * 1024,
-            50 * 1024 * 1024,
-            i32::from(CONFIG.cgroup),
-            8,
-        );
-        let spj_status = sandbox.spawn().await?;
-        drop(permit);
-
-        // 读取 spj 程序的输出，无论结果 ac 与否，都要将其返回
-        // TODO: 抽离此处读取文件的部分为单独的模块
-        let mut out_buffer = [0; 1024];
-        let mut outfile = try_io!(File::open(path.join(STDOUT_FILENAME)).await);
-        try_io!(outfile.read(&mut out_buffer).await);
-        let mut out_offset = 0;
-        for i in 0..1024 {
-            if out_buffer[i] == 0 {
-                out_offset = i;
-                break;
-            }
-        }
-        let outmsg = String::from_utf8_lossy(&out_buffer[..out_offset]);
-
-        let mut err_buffer = [0; 1024];
-        let mut errfile = try_io!(File::open(path.join(STDERR_FILENAME)).await);
-        try_io!(errfile.read(&mut err_buffer).await);
-        let mut err_offset = 0;
-        for i in 0..1024 {
-            if err_buffer[i] == 0 {
-                err_offset = i;
-                break;
-            }
-        }
-        let errmsg = String::from_utf8_lossy(&err_buffer[..err_offset]);
-        // spj 程序的返回值（code）代表了结果，0 ac，1 wa
-        return if spj_status.exit_code == 0 {
-            Ok(spj_result(
-                status.time_used,
-                status.memory_used,
-                JudgeResultEnum::Accepted,
-                &outmsg,
-                &errmsg,
-            ))
-        } else {
-            Ok(spj_result(
-                status.time_used,
-                status.memory_used,
-                JudgeResultEnum::WrongAnswer,
-                &outmsg,
-                &errmsg,
-            ))
-        };
+        return special_judge(in_file, out_file, spj_file, path, data_dir, status).await;
     }
 
     Err(Error::SystemError(String::from(format!("Unknown Error!"))))
+}
+
+async fn special_judge(
+    in_file: &str,
+    out_file: &str,
+    spj_file: &str,
+    path: &Path,
+    data_dir: &Path,
+    status: ProcessExitStatus,
+) -> Result<JudgeResponse> {
+    if spj_file == "" {
+        return Err(Error::SystemError(format!("field spj_file is required!")));
+    }
+    let spj = data_dir.join(&spj_file);
+    if !spj.exists() {
+        return Err(Error::SystemError(format!(
+            "Special Judge File `{}` Not Found!",
+            spj_file
+        )));
+    }
+    // 将 spj 程序复制到沙盒内部
+    try_io!(fs::copy(spj, path.join(SPJ_FILENAME)).await);
+
+    // TODO: 创建 input file 与 answer file 的 named pipe，穿透沙盒以文件形式传递给 spj 程序？
+    // 此方案不稳定因素较多，比如两个阻塞写入的线程、异常处理等。在没有明显性能问题前先不实现此方案
+
+    // 将 input file 与 answer file 复制到沙盒内部，以供 spj 使用
+    try_io!(fs::copy(data_dir.join(&in_file), path.join(SPJ_INPUT_FILENAME)).await);
+    try_io!(fs::copy(data_dir.join(&out_file), path.join(SPJ_ANSWER_FILENAME)).await);
+
+    // Program must be run with the following arguments: <input-file> <output-file> <answer-file>
+    let spj_cmd = format!(
+        "{} {} {} {}",
+        SPJ_FILENAME, SPJ_INPUT_FILENAME, STDOUT_FILENAME, SPJ_ANSWER_FILENAME
+    );
+
+    let semaphore = CPU_SEMAPHORE.clone();
+    let permit = semaphore.acquire().await;
+
+    let mut sandbox = Sandbox::new(
+        &spj_cmd,
+        path_to_string(&path)?,
+        String::from(&CONFIG.rootfs),
+        path_to_string(&path.join(SPJ_RESULT_FILENAME))?,
+        String::from("/STDIN/"),
+        path_to_string(&path.join(SPJ_STDOUT_FILENAME))?,
+        path_to_string(&path.join(SPJ_STDERR_FILENAME))?,
+        5000,
+        1024 * 1024,
+        50 * 1024 * 1024,
+        i32::from(CONFIG.cgroup),
+        8,
+    );
+    let spj_status = sandbox.spawn().await?;
+    drop(permit);
+
+    // 读取 spj 程序的输出，无论结果 ac 与否，都要将其返回
+    let outmsg = read_file_2048(path.join(SPJ_STDOUT_FILENAME)).await?;
+    let errmsg = read_file_2048(path.join(SPJ_STDERR_FILENAME)).await?;
+    // spj 程序的返回值（code）代表了结果，0 ac，1 wa
+    return if spj_status.exit_code == 0 {
+        Ok(spj_result(
+            status.time_used,
+            status.memory_used,
+            JudgeResultEnum::Accepted,
+            &outmsg,
+            &errmsg,
+        ))
+    } else {
+        Ok(spj_result(
+            status.time_used,
+            status.memory_used,
+            JudgeResultEnum::WrongAnswer,
+            &outmsg,
+            &errmsg,
+        ))
+    };
+}
+
+async fn read_file_2048(filename: PathBuf) -> Result<String> {
+    let mut buffer = [0; 2048];
+    let mut file = try_io!(File::open(filename).await);
+    try_io!(file.read(&mut buffer).await);
+
+    let mut offset = 0;
+    for i in 0..2047 {
+        offset = i;
+        if buffer[i] == 0 {
+            break;
+        }
+    }
+    try_io!(file.read(&mut buffer[offset..]).await);
+    Ok(String::from(String::from_utf8_lossy(&buffer[..offset])))
 }
