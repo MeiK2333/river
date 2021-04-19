@@ -42,6 +42,7 @@ message CompileData {
 message JudgeData {
   string in_file = 1;
   string out_file = 2;
+  string spj_file = 6;
   int32 time_limit = 3;
   int32 memory_limit = 4;
   JudgeType judge_type = 5;
@@ -49,7 +50,7 @@ message JudgeData {
 
 enum JudgeType {
   Standard = 0;
-  // Special = 1;
+  Special = 1;
 }
 
 message JudgeRequest {
@@ -83,6 +84,7 @@ message JudgeResult {
   int64 memory_used = 2;
   JudgeResultEnum result = 3;
   string errmsg = 4;
+  string outmsg = 5;
 }
 
 message JudgeResponse {

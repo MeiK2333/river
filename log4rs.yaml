@@ -15,12 +15,12 @@ appenders:
 
       trigger:
         kind: size
-        limit: 10 mb
+        limit: 64 mb
 
       roller:
         kind: fixed_window
         pattern: "logs/river.{}.log"
-        count: 5
+        count: 50
         base: 1
 root:
   level: info

@@ -4,10 +4,14 @@ use tokio::fs;
 use tokio::fs::{remove_file, File};
 use tokio::io::AsyncReadExt;
 
-use crate::config::{CONFIG, CPU_SEMAPHORE, RESULT_FILENAME, STDERR_FILENAME, STDOUT_FILENAME};
+use crate::config::{
+    CONFIG, CPU_SEMAPHORE, RESULT_FILENAME, SPJ_ANSWER_FILENAME, SPJ_FILENAME, SPJ_INPUT_FILENAME,
+    SPJ_RESULT_FILENAME, SPJ_STDERR_FILENAME, SPJ_STDOUT_FILENAME, STDERR_FILENAME,
+    STDOUT_FILENAME,
+};
 use crate::error::{Error, Result};
 use crate::result::{
-    accepted, compile_error, compile_success, memory_limit_exceeded, runtime_error,
+    accepted, compile_error, compile_success, memory_limit_exceeded, runtime_error, spj_result,
     standard_result, time_limit_exceeded, wrong_answer,
 };
 use crate::river::{JudgeResponse, JudgeResultEnum, JudgeType};
@@ -87,6 +91,7 @@ pub async fn judge(
     language: &str,
     in_file: &str,
     out_file: &str,
+    spj_file: &str,
     time_limit: i32,
     memory_limit: i32,
     judge_type: i32,
@@ -161,6 +166,97 @@ pub async fn judge(
             Ok(accepted(status.time_used, status.memory_used))
         } else {
             Ok(wrong_answer(status.time_used, status.memory_used))
+        };
+    } else if judge_type == JudgeType::Special as i32 {
+        // Special Judge
+        if spj_file == "" {
+            return Err(Error::SystemError(format!("field spj_file is required!")));
+        }
+        let spj = data_dir.join(&spj_file);
+        if !spj.exists() {
+            return Err(Error::SystemError(format!(
+                "Special Judge File `{}` Not Found!",
+                spj_file
+            )));
+        }
+        // 将 spj 程序复制到沙盒内部
+        try_io!(fs::copy(spj, path.join(SPJ_FILENAME)).await);
+
+        // TODO: 创建 input file 与 answer file 的 named pipe，穿透沙盒以文件形式传递给 spj 程序？
+        // 此方案不稳定因素较多，比如两个阻塞写入的线程、异常处理等。在没有明显性能问题前先不实现此方案
+
+        // 将 input file 与 answer file 复制到沙盒内部，以供 spj 使用
+        try_io!(fs::copy(data_dir.join(&in_file), path.join(SPJ_INPUT_FILENAME)).await);
+        try_io!(fs::copy(data_dir.join(&out_file), path.join(SPJ_ANSWER_FILENAME)).await);
+
+        // Program must be run with the following arguments: <input-file> <output-file> <answer-file>
+        let spj_cmd = format!(
+            "{} {} {} {}",
+            SPJ_FILENAME, SPJ_INPUT_FILENAME, STDOUT_FILENAME, SPJ_ANSWER_FILENAME
+        );
+
+        let semaphore = CPU_SEMAPHORE.clone();
+        let permit = semaphore.acquire().await;
+
+        let mut sandbox = Sandbox::new(
+            &spj_cmd,
+            path_to_string(&path)?,
+            String::from(&CONFIG.rootfs),
+            path_to_string(&path.join(SPJ_RESULT_FILENAME))?,
+            String::from("/STDIN/"),
+            path_to_string(&path.join(SPJ_STDOUT_FILENAME))?,
+            path_to_string(&path.join(SPJ_STDERR_FILENAME))?,
+            5000,
+            1024 * 1024,
+            50 * 1024 * 1024,
+            i32::from(CONFIG.cgroup),
+            8,
+        );
+        let spj_status = sandbox.spawn().await?;
+        drop(permit);
+
+        // 读取 spj 程序的输出，无论结果 ac 与否，都要将其返回
+        // TODO: 抽离此处读取文件的部分为单独的模块
+        let mut out_buffer = [0; 1024];
+        let mut outfile = try_io!(File::open(path.join(STDOUT_FILENAME)).await);
+        try_io!(outfile.read(&mut out_buffer).await);
+        let mut out_offset = 0;
+        for i in 0..1024 {
+            if out_buffer[i] == 0 {
+                out_offset = i;
+                break;
+            }
+        }
+        let outmsg = String::from_utf8_lossy(&out_buffer[..out_offset]);
+
+        let mut err_buffer = [0; 1024];
+        let mut errfile = try_io!(File::open(path.join(STDERR_FILENAME)).await);
+        try_io!(errfile.read(&mut err_buffer).await);
+        let mut err_offset = 0;
+        for i in 0..1024 {
+            if err_buffer[i] == 0 {
+                err_offset = i;
+                break;
+            }
+        }
+        let errmsg = String::from_utf8_lossy(&err_buffer[..err_offset]);
+        // spj 程序的返回值（code）代表了结果，0 ac，1 wa
+        return if spj_status.exit_code == 0 {
+            Ok(spj_result(
+                status.time_used,
+                status.memory_used,
+                JudgeResultEnum::Accepted,
+                &outmsg,
+                &errmsg,
+            ))
+        } else {
+            Ok(spj_result(
+                status.time_used,
+                status.memory_used,
+                JudgeResultEnum::WrongAnswer,
+                &outmsg,
+                &errmsg,
+            ))
         };
     }
 

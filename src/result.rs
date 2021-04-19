@@ -11,6 +11,7 @@ pub fn system_error(err: Error) -> JudgeResponse {
             memory_used: 0,
             result: JudgeResultEnum::SystemError as i32,
             errmsg: format!("{}", err).into(),
+            outmsg: String::from(""),
         })),
     }
 }
@@ -34,6 +35,7 @@ pub fn compile_error(time_used: i64, memory_used: i64, errmsg: &str) -> JudgeRes
             memory_used,
             result: JudgeResultEnum::CompileError as i32,
             errmsg: String::from(errmsg),
+            outmsg: String::from(""),
         })),
     }
 }
@@ -65,6 +67,7 @@ pub fn runtime_error(time_used: i64, memory_used: i64, errmsg: &str) -> JudgeRes
             memory_used,
             result: JudgeResultEnum::RuntimeError as i32,
             errmsg: String::from(errmsg),
+            outmsg: String::from(""),
         })),
     }
 }
@@ -76,6 +79,25 @@ fn judge_result(time_used: i64, memory_used: i64, result: JudgeResultEnum) -> Ju
             memory_used,
             result: result as i32,
             errmsg: String::from(""),
+            outmsg: String::from(""),
+        })),
+    }
+}
+
+pub fn spj_result(
+    time_used: i64,
+    memory_used: i64,
+    result: JudgeResultEnum,
+    outmsg: &str,
+    errmsg: &str,
+) -> JudgeResponse {
+    JudgeResponse {
+        state: Some(State::Result(JudgeResult {
+            time_used,
+            memory_used,
+            result: result as i32,
+            errmsg: String::from(errmsg),
+            outmsg: String::from(outmsg),
         })),
     }
 }

@@ -48,7 +48,7 @@ languages:
   Java:
     compile_cmd: /usr/bin/javac Main.java
     code_file: Main.java
-    run_cmd: /usr/bin/java -cp . Main
+    run_cmd:  /usr/bin/java -Xmx8m -XX:MaxHeapSize=64m -XX:InitialHeapSize=8m -XX:CompressedClassSpaceSize=8m -XX:MaxMetaspaceSize=64m -cp . Main
     version: |-
       openjdk 11.0.9.1 2020-11-04
       OpenJDK Runtime Environment (build 11.0.9.1+1-Ubuntu-0ubuntu1.20.04)

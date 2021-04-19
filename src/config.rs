@@ -11,6 +11,12 @@ use tokio::sync::Semaphore;
 pub static STDOUT_FILENAME: &str = "stdout.txt";
 pub static STDERR_FILENAME: &str = "stderr.txt";
 pub static RESULT_FILENAME: &str = "result.txt";
+pub static SPJ_FILENAME: &str = "spj";
+pub static SPJ_INPUT_FILENAME: &str = "spj_input.txt";
+pub static SPJ_ANSWER_FILENAME: &str = "spj_answer.txt";
+pub static SPJ_STDOUT_FILENAME: &str = "spj_stdout.txt";
+pub static SPJ_STDERR_FILENAME: &str = "spj_stderr.txt";
+pub static SPJ_RESULT_FILENAME: &str = "spj_result.txt";
 
 lazy_static! {
     pub static ref CONFIG: Config = {

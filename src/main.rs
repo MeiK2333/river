@@ -88,6 +88,7 @@ impl River for RiverService {
                                 &language,
                                 &data.in_file,
                                 &data.out_file,
+                                &data.spj_file,
                                 data.time_limit,
                                 data.memory_limit,
                                 data.judge_type,
