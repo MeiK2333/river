@@ -47,7 +47,7 @@ pub async fn compile(language: &str, code: &str, path: &Path) -> Result<JudgeRes
         1024 * 1024,
         50 * 1024 * 1024,
         i32::from(CONFIG.cgroup),
-        64,
+        128,
     );
     let status = sandbox.spawn().await?;
     drop(permit);
