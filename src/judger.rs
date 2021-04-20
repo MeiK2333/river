@@ -43,11 +43,11 @@ pub async fn compile(language: &str, code: &str, path: &Path) -> Result<JudgeRes
         String::from("/STDIN/"),
         path_to_string(&path.join(STDOUT_FILENAME))?,
         path_to_string(&path.join(STDERR_FILENAME))?,
-        5000,
+        8000,
         1024 * 1024,
         50 * 1024 * 1024,
         i32::from(CONFIG.cgroup),
-        32,
+        64,
     );
     let status = sandbox.spawn().await?;
     drop(permit);
@@ -107,6 +107,7 @@ pub async fn judge(
             || language == "Go"
             || language == "JavaScript"
             || language == "TypeScript"
+            || language == "CSharp"
         {
             1024 * 1024
         } else {

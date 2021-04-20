@@ -53,3 +53,39 @@ languages:
       openjdk 11.0.9.1 2020-11-04
       OpenJDK Runtime Environment (build 11.0.9.1+1-Ubuntu-0ubuntu1.20.04)
       OpenJDK 64-Bit Server VM (build 11.0.9.1+1-Ubuntu-0ubuntu1.20.04, mixed mode, sharing)
+
+  CSharp:
+    compile_cmd: /plugins/csharp/compile.sh Main.cs
+    code_file: Main.cs
+    run_cmd: ./bin/release/net5.0/Main
+    version: 5.0.202
+
+  PHP:
+    compile_cmd: php -l main.php
+    code_file: main.php
+    run_cmd: php -f main.php
+    version: PHP 8.0.3 (cli) (built:: Mar  5 2021 07:54:13) ( NTS )
+
+  Ruby:
+    compile_cmd: ruby -c main.rb
+    code_file: main.rb
+    run_cmd: ruby main.rb
+    version: ruby 2.7.0p0 (2019-12-25 revision 647ee6f091) [x86_64-linux-gnu]
+
+  Perl:
+    compile_cmd: perl -c main.pl
+    code_file: main.pl
+    run_cmd: perl main.pl
+    version: This is perl 5, version 30, subversion 0 (v5.30.0) built for x86_64-linux-gnu-thread-multi
+
+  Haskell:
+    compile_cmd: ghc main.hs
+    code_file: main.hs
+    run_cmd: ./main
+    version: The Glorious Glasgow Haskell Compilation System, version 8.6.5
+
+  Pascal:
+    compile_cmd: fpc -omain main.p
+    code_file: main.p
+    run_cmd: ./main
+    version: Free Pascal Compiler version 3.0.4+dfsg-23 [2019/11/25] for x86_64
