@@ -54,11 +54,13 @@ languages:
       OpenJDK Runtime Environment (build 11.0.9.1+1-Ubuntu-0ubuntu1.20.04)
       OpenJDK 64-Bit Server VM (build 11.0.9.1+1-Ubuntu-0ubuntu1.20.04, mixed mode, sharing)
 
-  CSharp:
-    compile_cmd: /plugins/csharp/compile.sh Main.cs
-    code_file: Main.cs
-    run_cmd: ./bin/release/net5.0/Main
-    version: 5.0.202
+  C#:
+    compile_cmd: /usr/bin/csc main.cs
+    code_file: main.cs
+    run_cmd: /usr/bin/mono main.exe
+    version: |-
+      Mono JIT compiler version 6.12.0.122 (tarball Mon Feb 22 17:28:32 UTC 2021)
+      Microsoft (R) Visual C# Compiler version 3.6.0-4.20224.5 (ec77c100)
 
   PHP:
     compile_cmd: php -l main.php
