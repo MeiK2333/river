@@ -26,5 +26,5 @@ lazy_static = "1.4.0"
 num_cpus = "1.0"
 
 [build-dependencies]
-tonic-build ={ version = "0.3" }
+tonic-build ={ version = "0.4" }
 cc = "1.0"
