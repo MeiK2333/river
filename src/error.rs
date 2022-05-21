@@ -33,7 +33,7 @@ macro_rules! try_io {
         match $expression {
             Ok(val) => val,
             Err(e) => return Err(crate::error::Error::IOError(e)),
-        };
+        }
     };
 }
 
