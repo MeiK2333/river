@@ -44,10 +44,10 @@ pub async fn compile(language: &str, code: &str, path: &Path) -> Result<JudgeRes
         path_to_string(&path.join(STDOUT_FILENAME))?,
         path_to_string(&path.join(STDERR_FILENAME))?,
         8000,
-        1024 * 1024,
+        1024 * 1024 * 100,
         50 * 1024 * 1024,
         i32::from(CONFIG.cgroup),
-        128,
+        0,
     );
     let status = sandbox.spawn().await?;
     drop(permit);
@@ -217,13 +217,21 @@ async fn special_judge(
     let outmsg = read_file_2048(path.join(SPJ_STDOUT_FILENAME)).await?;
     let errmsg = read_file_2048(path.join(SPJ_STDERR_FILENAME)).await?;
     // spj 程序的返回值（code）代表了结果，0 ac，1 wa
-    return if spj_status.exit_code == 0 {
+    return if spj_status.exit_code == 0 && spj_status.signal == 0 {
         Ok(spj_result(
             status.time_used,
             status.memory_used,
             JudgeResultEnum::Accepted,
             &outmsg,
             &errmsg,
+        ))
+    } else if spj_status.signal != 0 {
+        Ok(spj_result(
+            status.time_used,
+            status.memory_used,
+            JudgeResultEnum::SystemError,
+            "",
+            &format!("spj checker run failed, signal={}, exit={}, status={}, time={}, memory={}", spj_status.signal, spj_status.exit_code, spj_status.status, spj_status.time_used, spj_status.memory_used),
         ))
     } else {
         Ok(spj_result(
